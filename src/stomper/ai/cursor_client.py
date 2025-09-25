@@ -72,14 +72,25 @@ class CursorClient(BaseAIAgent):
         Returns:
             Generated fix code
         """
+        # Validate inputs
+        if not code_context or not code_context.strip():
+            raise ValueError("code_context cannot be empty")
+        
+        if not prompt or not prompt.strip():
+            raise ValueError("prompt cannot be empty")
+        
+        # Sanitize inputs
+        sanitized_code = self._sanitize_code(code_context)
+        sanitized_prompt = self._sanitize_prompt(prompt)
+        
         try:
             # Create a temporary file with the code context
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
-                temp_file.write(code_context)
+                temp_file.write(sanitized_code)
                 temp_file_path = Path(temp_file.name)
             
             # Construct the cursor-cli command
-            full_prompt = self._construct_prompt(error_context, code_context, prompt)
+            full_prompt = self._construct_prompt(error_context, sanitized_code, sanitized_prompt)
             
             # Run cursor-cli in headless mode
             cmd = [
@@ -110,6 +121,11 @@ class CursorClient(BaseAIAgent):
             else:
                 raise RuntimeError("cursor-cli did not produce output file")
             
+            # Validate the response
+            if not self.validate_response(fixed_code):
+                logger.warning("cursor-cli response failed validation")
+                raise RuntimeError("cursor-cli response failed validation")
+            
             # Clean up temporary file
             temp_file_path.unlink()
             
@@ -121,6 +137,13 @@ class CursorClient(BaseAIAgent):
         except Exception as e:
             logger.error(f"Error running cursor-cli: {e}")
             raise RuntimeError(f"Error running cursor-cli: {e}")
+        finally:
+            # Ensure cleanup
+            try:
+                if 'temp_file_path' in locals() and temp_file_path.exists():
+                    temp_file_path.unlink()
+            except Exception:
+                pass
     
     def validate_response(self, response: str) -> bool:
         """Validate cursor-cli response.
@@ -134,26 +157,47 @@ class CursorClient(BaseAIAgent):
         if not response or not response.strip():
             return False
         
-        # Basic validation - check if response looks like code
-        # This is a simple heuristic, could be enhanced
-        code_indicators = [
-            'def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ',
-            'return ', 'yield ', 'async ', 'await ', 'try:', 'except:',
-            'finally:', 'with ', 'lambda ', '=', '(', ')', '[', ']', '{', '}'
-        ]
-        
         response_lower = response.lower()
-        has_code_indicators = any(indicator in response_lower for indicator in code_indicators)
         
-        # Check for obvious error patterns
+        # Check for obvious error patterns first
         error_patterns = [
             'error:', 'exception:', 'traceback:', 'failed to',
-            'cannot', 'unable to', 'invalid', 'malformed'
+            'cannot', 'unable to', 'invalid', 'malformed',
+            'syntax error', 'indentation error', 'name error',
+            'type error', 'attribute error', 'value error'
         ]
         
         has_error_patterns = any(pattern in response_lower for pattern in error_patterns)
+        if has_error_patterns:
+            return False
         
-        return has_code_indicators and not has_error_patterns
+        # Check if response looks like code
+        code_indicators = [
+            'def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ',
+            'return ', 'yield ', 'async ', 'await ', 'try:', 'except:',
+            'finally:', 'with ', 'lambda ', '=', '(', ')', '[', ']', '{', '}',
+            'print(', 'len(', 'str(', 'int(', 'float(', 'list(', 'dict(',
+            'set(', 'tuple(', 'range(', 'enumerate(', 'zip('
+        ]
+        
+        has_code_indicators = any(indicator in response_lower for indicator in code_indicators)
+        
+        # Additional validation for Python-specific patterns
+        python_patterns = [
+            'if __name__', 'def main(', 'if __main__',
+            'import ', 'from ', 'as ', 'in ', 'not in ',
+            'and ', 'or ', 'not ', 'is ', 'is not '
+        ]
+        
+        has_python_patterns = any(pattern in response_lower for pattern in python_patterns)
+        
+        # Must have code indicators and not be just comments
+        comment_only = response.strip().startswith('#') and not any(
+            line.strip() and not line.strip().startswith('#') 
+            for line in response.split('\n')
+        )
+        
+        return has_code_indicators and not comment_only and (has_python_patterns or has_code_indicators)
     
     def _construct_prompt(
         self, 
@@ -195,6 +239,59 @@ The fix should be minimal and focused on resolving the specific error.
 """
         
         return constructed_prompt.strip()
+    
+    def _sanitize_code(self, code: str) -> str:
+        """Sanitize code input to prevent security issues.
+        
+        Args:
+            code: Code to sanitize
+            
+        Returns:
+            Sanitized code
+        """
+        if not code:
+            return ""
+        
+        # Only sanitize truly dangerous patterns
+        dangerous_patterns = [
+            'exec(', 'eval(', '__import__', 'compile(',
+            'input(', 'raw_input('
+        ]
+        
+        sanitized = code
+        for pattern in dangerous_patterns:
+            if pattern in sanitized.lower():
+                logger.warning(f"Potentially dangerous pattern detected: {pattern}")
+                # Replace with safe alternative or remove
+                sanitized = sanitized.replace(pattern, f"# {pattern} # REMOVED FOR SECURITY")
+        
+        return sanitized
+    
+    def _sanitize_prompt(self, prompt: str) -> str:
+        """Sanitize prompt input to prevent injection attacks.
+        
+        Args:
+            prompt: Prompt to sanitize
+            
+        Returns:
+            Sanitized prompt
+        """
+        if not prompt:
+            return ""
+        
+        # Remove potential injection patterns
+        injection_patterns = [
+            '`', '$(', '${', 'exec(', 'eval(',
+            'import os', 'import sys', 'subprocess'
+        ]
+        
+        sanitized = prompt
+        for pattern in injection_patterns:
+            if pattern in sanitized:
+                logger.warning(f"Potential injection pattern detected: {pattern}")
+                sanitized = sanitized.replace(pattern, "")
+        
+        return sanitized.strip()
     
     def get_cursor_cli_version(self) -> str:
         """Get cursor-cli version.

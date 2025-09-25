@@ -15,13 +15,13 @@ These are the tasks to be completed for the spec detailed in @.agent-os/specs/20
   - [x] 1.5 Add fallback strategy for multiple agents
   - [x] 1.6 Verify all tests pass
 
-- [ ] 2. Cursor CLI Headless Integration
-  - [ ] 2.1 Write tests for CursorClient class
-  - [ ] 2.2 Implement CursorClient with cursor-cli execution
-  - [ ] 2.3 Add prompt validation and sanitization
-  - [ ] 2.4 Add response parsing and validation
-  - [ ] 2.5 Add error handling for cursor-cli failures
-  - [ ] 2.6 Verify all tests pass
+- [x] 2. Cursor CLI Headless Integration
+  - [x] 2.1 Write tests for CursorClient class
+  - [x] 2.2 Implement CursorClient with cursor-cli execution
+  - [x] 2.3 Add prompt validation and sanitization
+  - [x] 2.4 Add response parsing and validation
+  - [x] 2.5 Add error handling for cursor-cli failures
+  - [x] 2.6 Verify all tests pass
 
 - [ ] 3. Error-to-Prompt Generation System
   - [ ] 3.1 Write tests for PromptGenerator class
