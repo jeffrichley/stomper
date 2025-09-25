@@ -48,6 +48,101 @@ The AI-powered approach provides the best balance of automation and intelligence
 - Enables focus on higher-value development tasks
 - Provides rollback capabilities for safety
 
+## 2025-01-15: Test Organization and CliRunner Classification
+
+**ID:** DEC-002
+**Status:** Accepted
+**Category:** Testing
+**Stakeholders:** Tech Lead, QA Team
+
+### Decision
+
+Any test that uses `CliRunner` from `typer.testing` should be classified as an end-to-end (e2e) test and placed in the `tests/e2e/` directory, not in `tests/unit/`.
+
+### Context
+
+`CliRunner` tests actually invoke the full CLI application, including argument parsing, file discovery, tool execution, and output formatting. These are integration tests that exercise the entire application stack, not unit tests that test isolated components.
+
+### Rationale
+
+- **Unit tests** should test individual functions/methods in isolation
+- **E2E tests** should test the full application workflow
+- `CliRunner` tests the complete CLI interface, making them e2e by definition
+- This separation improves test performance (unit tests run faster)
+- It provides clearer test organization and purpose
+
+### Consequences
+
+**Positive:**
+- Faster unit test execution (no CLI invocation overhead)
+- Clearer separation of test types
+- Better test organization
+- More accurate test categorization
+
+**Implementation:**
+- Move all `CliRunner` tests from `tests/unit/` to `tests/e2e/`
+- Update justfile to exclude e2e tests from unit test runs
+- Ensure e2e tests are properly marked with `@pytest.mark.e2e`
+
+---
+
+## 2025-01-15: Testing Best Practices - Robust Exception Testing
+
+**ID:** DEC-002
+**Status:** Accepted
+**Category:** Technical
+**Stakeholders:** Tech Lead, Development Team
+
+### Decision
+
+Use robust exception testing patterns that avoid brittle string matching in `pytest.raises`. Prefer exception types over message matching, and use structured error attributes when available.
+
+### Context
+
+Current tests use fragile string matching like `match="greater than or equal to 1"` which breaks when error messages change, even if the underlying validation logic is correct. This creates maintenance overhead and false test failures.
+
+### Alternatives Considered
+
+1. **String Matching (Current)**
+   - Pros: Simple to implement
+   - Cons: Brittle, breaks on message changes, maintenance overhead
+
+2. **Exception Type Only**
+   - Pros: Robust, focuses on correctness
+   - Cons: Less specific validation
+
+3. **Structured Error Attributes**
+   - Pros: Robust, specific, uses Pydantic's structured error data
+   - Cons: Slightly more complex
+
+4. **Custom Exceptions**
+   - Pros: Full control, clear structure
+   - Cons: Additional complexity for simple cases
+
+### Rationale
+
+The hierarchy of robustness is:
+1. Check exception type only (most stable)
+2. Inspect structured attributes (`.errors()`, fields)
+3. Match regex minimally if no structure exists
+4. Define custom exceptions with fields
+5. Use snapshot testing if messages matter for UX
+
+This approach ensures tests remain stable while still providing meaningful validation.
+
+### Consequences
+
+**Positive:**
+- Tests are more robust and maintainable
+- Reduced false test failures from message changes
+- Better focus on actual correctness vs. message formatting
+- Easier to maintain as Pydantic updates
+
+**Implementation:**
+- Replace string matching with exception type checking
+- Use Pydantic's structured error data when available
+- Apply pattern consistently across all validation tests
+
 **Negative:**
 - Adds complexity with AI agent integration
 - Requires maintenance of error mapping system
