@@ -4,10 +4,10 @@
 **Goal**: Basic automated fixing workflow with cursor-cli integration
 
 ### Week 1: Foundation
-- [ ] CLI framework setup with Click
-- [ ] Basic configuration system (TOML)
-- [ ] Quality tool integration (ruff, mypy, pytest)
-- [ ] Error collection and parsing
+- [x] CLI framework setup with Typer
+- [x] Basic configuration system (TOML)
+- [x] Quality tool integration (ruff, mypy, pytest)
+- [x] Error collection and parsing
 
 ### Week 2: AI Agent Integration
 - [ ] Cursor CLI headless mode integration

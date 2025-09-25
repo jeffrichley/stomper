@@ -1,0 +1,234 @@
+"""Cursor CLI integration for AI-powered code fixing."""
+
+import subprocess
+import json
+import tempfile
+from pathlib import Path
+from typing import Dict, Any, Optional
+import logging
+
+from .base import BaseAIAgent, AgentInfo, AgentCapabilities
+
+
+logger = logging.getLogger(__name__)
+
+
+class CursorClient(BaseAIAgent):
+    """Cursor CLI client implementing AIAgent protocol."""
+    
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 30):
+        """Initialize Cursor CLI client.
+        
+        Args:
+            api_key: Cursor API key (if None, will use environment variable)
+            timeout: Timeout for cursor-cli commands in seconds
+        """
+        agent_info = AgentInfo(
+            name="cursor-cli",
+            version="1.0.0",
+            description="Cursor CLI AI agent for automated code fixing",
+            capabilities=AgentCapabilities(
+                can_fix_linting=True,
+                can_fix_types=True,
+                can_fix_tests=True,
+                max_context_length=8000,
+                supported_languages=["python", "javascript", "typescript", "go", "rust"]
+            )
+        )
+        super().__init__(agent_info)
+        
+        self.api_key = api_key
+        self.timeout = timeout
+        self._check_cursor_cli_availability()
+    
+    def _check_cursor_cli_availability(self) -> None:
+        """Check if cursor-cli is available and accessible."""
+        try:
+            result = subprocess.run(
+                ["cursor-agent", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"cursor-cli not available: {result.stderr}")
+            logger.info(f"Cursor CLI available: {result.stdout.strip()}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            raise RuntimeError(f"cursor-cli not found or not accessible: {e}")
+    
+    def generate_fix(
+        self, 
+        error_context: Dict[str, Any], 
+        code_context: str, 
+        prompt: str
+    ) -> str:
+        """Generate fix using cursor-cli headless mode.
+        
+        Args:
+            error_context: Error details including type, location, message
+            code_context: Surrounding code context
+            prompt: Specific fix instructions
+            
+        Returns:
+            Generated fix code
+        """
+        try:
+            # Create a temporary file with the code context
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
+                temp_file.write(code_context)
+                temp_file_path = Path(temp_file.name)
+            
+            # Construct the cursor-cli command
+            full_prompt = self._construct_prompt(error_context, code_context, prompt)
+            
+            # Run cursor-cli in headless mode
+            cmd = [
+                "cursor-agent",
+                "-p", full_prompt,
+                "--force",  # Allow file modifications
+                str(temp_file_path)
+            ]
+            
+            logger.debug(f"Running cursor-cli command: {' '.join(cmd)}")
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                cwd=temp_file_path.parent
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"cursor-cli failed: {result.stderr}")
+                raise RuntimeError(f"cursor-cli execution failed: {result.stderr}")
+            
+            # Read the modified file
+            if temp_file_path.exists():
+                with open(temp_file_path, 'r') as f:
+                    fixed_code = f.read()
+            else:
+                raise RuntimeError("cursor-cli did not produce output file")
+            
+            # Clean up temporary file
+            temp_file_path.unlink()
+            
+            return fixed_code
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"cursor-cli timed out after {self.timeout} seconds")
+            raise RuntimeError(f"cursor-cli timed out after {self.timeout} seconds")
+        except Exception as e:
+            logger.error(f"Error running cursor-cli: {e}")
+            raise RuntimeError(f"Error running cursor-cli: {e}")
+    
+    def validate_response(self, response: str) -> bool:
+        """Validate cursor-cli response.
+        
+        Args:
+            response: AI-generated response to validate
+            
+        Returns:
+            True if response is valid, False otherwise
+        """
+        if not response or not response.strip():
+            return False
+        
+        # Basic validation - check if response looks like code
+        # This is a simple heuristic, could be enhanced
+        code_indicators = [
+            'def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ',
+            'return ', 'yield ', 'async ', 'await ', 'try:', 'except:',
+            'finally:', 'with ', 'lambda ', '=', '(', ')', '[', ']', '{', '}'
+        ]
+        
+        response_lower = response.lower()
+        has_code_indicators = any(indicator in response_lower for indicator in code_indicators)
+        
+        # Check for obvious error patterns
+        error_patterns = [
+            'error:', 'exception:', 'traceback:', 'failed to',
+            'cannot', 'unable to', 'invalid', 'malformed'
+        ]
+        
+        has_error_patterns = any(pattern in response_lower for pattern in error_patterns)
+        
+        return has_code_indicators and not has_error_patterns
+    
+    def _construct_prompt(
+        self, 
+        error_context: Dict[str, Any], 
+        code_context: str, 
+        prompt: str
+    ) -> str:
+        """Construct comprehensive prompt for cursor-cli.
+        
+        Args:
+            error_context: Error details
+            code_context: Code context
+            prompt: Base prompt
+            
+        Returns:
+            Constructed prompt for cursor-cli
+        """
+        error_type = error_context.get('error_type', 'unknown')
+        error_message = error_context.get('message', '')
+        file_path = error_context.get('file', '')
+        line_number = error_context.get('line', '')
+        
+        constructed_prompt = f"""
+{prompt}
+
+Error Details:
+- Type: {error_type}
+- Message: {error_message}
+- File: {file_path}
+- Line: {line_number}
+
+Code Context:
+```python
+{code_context}
+```
+
+Please fix the {error_type} error while maintaining code quality and following Python best practices.
+The fix should be minimal and focused on resolving the specific error.
+"""
+        
+        return constructed_prompt.strip()
+    
+    def get_cursor_cli_version(self) -> str:
+        """Get cursor-cli version.
+        
+        Returns:
+            cursor-cli version string
+        """
+        try:
+            result = subprocess.run(
+                ["cursor-agent", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+            else:
+                return "unknown"
+        except Exception:
+            return "unknown"
+    
+    def is_available(self) -> bool:
+        """Check if cursor-cli is available and working.
+        
+        Returns:
+            True if cursor-cli is available, False otherwise
+        """
+        try:
+            result = subprocess.run(
+                ["cursor-agent", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
