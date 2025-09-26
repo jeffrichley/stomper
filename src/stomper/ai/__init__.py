@@ -3,7 +3,7 @@
 from .base import AIAgent, BaseAIAgent, AgentCapabilities, AgentInfo
 from .cursor_client import CursorClient
 from .agent_manager import AgentManager
-from .sandbox_manager import SandboxManager, ProjectAwareCursorClient
+from .sandbox_manager import SandboxManager
 
 __all__ = [
     "AIAgent",
@@ -13,5 +13,4 @@ __all__ = [
     "CursorClient",
     "AgentManager",
     "SandboxManager",
-    "ProjectAwareCursorClient",
 ]

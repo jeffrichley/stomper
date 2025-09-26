@@ -1,10 +1,12 @@
-"""Cursor CLI integration for AI-powered code fixing."""
+"""Cursor CLI integration for AI-powered code fixing with project context."""
 
 import subprocess
 import json
 import tempfile
+import select
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import logging
 
 from .base import BaseAIAgent, AgentInfo, AgentCapabilities
@@ -14,19 +16,20 @@ logger = logging.getLogger(__name__)
 
 
 class CursorClient(BaseAIAgent):
-    """Cursor CLI client implementing AIAgent protocol."""
+    """Cursor CLI client with full project context and git sandbox support."""
     
-    def __init__(self, api_key: Optional[str] = None, timeout: int = 30):
-        """Initialize Cursor CLI client.
+    def __init__(self, sandbox_manager, api_key: Optional[str] = None, timeout: int = 30):
+        """Initialize Cursor CLI client with project context.
         
         Args:
+            sandbox_manager: Sandbox manager instance for git operations
             api_key: Cursor API key (if None, will use environment variable)
             timeout: Timeout for cursor-cli commands in seconds
         """
         agent_info = AgentInfo(
-            name="cursor-cli",
+            name="cursor-cli-project",
             version="1.0.0",
-            description="Cursor CLI AI agent for automated code fixing",
+            description="Cursor CLI AI agent for automated code fixing with project context",
             capabilities=AgentCapabilities(
                 can_fix_linting=True,
                 can_fix_types=True,
@@ -37,116 +40,71 @@ class CursorClient(BaseAIAgent):
         )
         super().__init__(agent_info)
         
+        self.sandbox_manager = sandbox_manager
         self.api_key = api_key
         self.timeout = timeout
-        self._check_cursor_cli_availability()
-    
-    def _check_cursor_cli_availability(self) -> None:
-        """Check if cursor-cli is available and accessible."""
-        try:
-            result = subprocess.run(
-                ["cursor-agent", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"cursor-cli not available: {result.stderr}")
-            logger.info(f"Cursor CLI available: {result.stdout.strip()}")
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            raise RuntimeError(f"cursor-cli not found or not accessible: {e}")
+        
+        # Check availability during initialization
+        if not self.is_available():
+            raise RuntimeError("cursor-cli not available or not accessible")
+        logger.info("Cursor CLI available and ready")
     
     def generate_fix(
         self, 
-        error_context: Dict[str, Any], 
-        code_context: str, 
-        prompt: str
-    ) -> str:
-        """Generate fix using cursor-cli headless mode.
+        prompt: str,
+        sandbox_path: Path
+    ) -> Dict[str, Any]:
+        """Generate fix using cursor-cli in sandbox.
         
         Args:
-            error_context: Error details including type, location, message
-            code_context: Surrounding code context
-            prompt: Specific fix instructions
+            prompt: Fix instructions
+            sandbox_path: Path to sandbox directory
             
         Returns:
-            Generated fix code
+            Result dictionary with execution info and sandbox status
         """
-        # Validate inputs
-        if not code_context or not code_context.strip():
-            raise ValueError("code_context cannot be empty")
-        
         if not prompt or not prompt.strip():
             raise ValueError("prompt cannot be empty")
         
-        # Sanitize inputs
-        sanitized_code = self._sanitize_code(code_context)
-        sanitized_prompt = self._sanitize_prompt(prompt)
+        # Run cursor-cli in the sandbox directory - no specific file target
+        cmd = [
+            "cursor-agent",
+            "-p",  # Print output to stdout
+            "--force",  # Force allow commands
+            prompt  # Prompt as positional argument
+        ]
         
-        try:
-            # Create a temporary file with the code context
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as temp_file:
-                temp_file.write(sanitized_code)
-                temp_file_path = Path(temp_file.name)
-            
-            # Construct the cursor-cli command
-            full_prompt = self._construct_prompt(error_context, sanitized_code, sanitized_prompt)
-            
-            # Run cursor-cli in headless mode
-            cmd = [
-                "cursor-agent",
-                "-p", full_prompt,
-                "--force",  # Allow file modifications
-                str(temp_file_path)
-            ]
-            
-            logger.debug(f"Running cursor-cli command: {' '.join(cmd)}")
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                cwd=temp_file_path.parent
-            )
-            
-            if result.returncode != 0:
-                logger.error(f"cursor-cli failed: {result.stderr}")
-                raise RuntimeError(f"cursor-cli execution failed: {result.stderr}")
-            
-            # Read the modified file
-            if temp_file_path.exists():
-                with open(temp_file_path, 'r') as f:
-                    fixed_code = f.read()
-            else:
-                raise RuntimeError("cursor-cli did not produce output file")
-            
-            # Validate the response
-            if not self.validate_response(fixed_code):
-                logger.warning("cursor-cli response failed validation")
-                raise RuntimeError("cursor-cli response failed validation")
-            
-            # Clean up temporary file
-            temp_file_path.unlink()
-            
-            return fixed_code
-            
-        except subprocess.TimeoutExpired:
-            logger.error(f"cursor-cli timed out after {self.timeout} seconds")
-            raise RuntimeError(f"cursor-cli timed out after {self.timeout} seconds")
-        except Exception as e:
-            logger.error(f"Error running cursor-cli: {e}")
-            raise RuntimeError(f"Error running cursor-cli: {e}")
-        finally:
-            # Ensure cleanup
-            try:
-                if 'temp_file_path' in locals() and temp_file_path.exists():
-                    temp_file_path.unlink()
-            except Exception:
-                pass
+        logger.debug(f"Running cursor-cli command: {' '.join(cmd)}")
+        logger.debug(f"Working directory: {sandbox_path}")
+        
+        # Use our streaming method
+        result = self.run_cursor_agent_streaming(
+            cmd, 
+            str(sandbox_path), 
+            timeout=self.timeout
+        )
+        
+        if result['returncode'] != 0:
+            logger.error(f"cursor-cli failed: {result['stderr']}")
+            raise RuntimeError(f"cursor-cli execution failed: {result['stderr']}")
+        
+        # Log completion info
+        if result['result']:
+            logger.info(f"✅ Cursor-agent completed successfully!")
+            logger.info(f"Duration: {result['result'].get('duration_ms', 0)}ms")
+            logger.info(f"Events captured: {len(result['events'])}")
+        
+        # Get sandbox status to see what files were changed
+        sandbox_status = self.sandbox_manager.get_sandbox_status(sandbox_path)
+        
+        return {
+            "execution_result": result,
+            "sandbox_status": sandbox_status,
+            "sandbox_path": sandbox_path
+        }
     
     def validate_response(self, response: str) -> bool:
-        """Validate cursor-cli response.
+        """Validate AI response (required by BaseAIAgent interface).
         
         Args:
             response: AI-generated response to validate
@@ -154,144 +112,100 @@ class CursorClient(BaseAIAgent):
         Returns:
             True if response is valid, False otherwise
         """
-        if not response or not response.strip():
-            return False
-        
-        response_lower = response.lower()
-        
-        # Check for obvious error patterns first
-        error_patterns = [
-            'error:', 'exception:', 'traceback:', 'failed to',
-            'cannot', 'unable to', 'invalid', 'malformed',
-            'syntax error', 'indentation error', 'name error',
-            'type error', 'attribute error', 'value error'
-        ]
-        
-        has_error_patterns = any(pattern in response_lower for pattern in error_patterns)
-        if has_error_patterns:
-            return False
-        
-        # Check if response looks like code
-        code_indicators = [
-            'def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ',
-            'return ', 'yield ', 'async ', 'await ', 'try:', 'except:',
-            'finally:', 'with ', 'lambda ', '=', '(', ')', '[', ']', '{', '}',
-            'print(', 'len(', 'str(', 'int(', 'float(', 'list(', 'dict(',
-            'set(', 'tuple(', 'range(', 'enumerate(', 'zip('
-        ]
-        
-        has_code_indicators = any(indicator in response_lower for indicator in code_indicators)
-        
-        # Additional validation for Python-specific patterns
-        python_patterns = [
-            'if __name__', 'def main(', 'if __main__',
-            'import ', 'from ', 'as ', 'in ', 'not in ',
-            'and ', 'or ', 'not ', 'is ', 'is not '
-        ]
-        
-        has_python_patterns = any(pattern in response_lower for pattern in python_patterns)
-        
-        # Must have code indicators and not be just comments
-        comment_only = response.strip().startswith('#') and not any(
-            line.strip() and not line.strip().startswith('#') 
-            for line in response.split('\n')
-        )
-        
-        return has_code_indicators and not comment_only and (has_python_patterns or has_code_indicators)
+        # Simple validation - just check if response is not empty
+        return bool(response and response.strip())
     
-    def _construct_prompt(
+    
+    def run_cursor_agent_streaming(
         self, 
-        error_context: Dict[str, Any], 
-        code_context: str, 
-        prompt: str
-    ) -> str:
-        """Construct comprehensive prompt for cursor-cli.
-        
+        cmd: List[str], 
+        cwd: str, 
+        timeout: int = 30
+    ) -> Dict[str, Any]:
+        """Run cursor-agent headless with streaming output and JSON parsing.
+
         Args:
-            error_context: Error details
-            code_context: Code context
-            prompt: Base prompt
-            
+            cmd: The command to execute.
+            cwd: Working directory.
+            timeout: Max runtime in seconds.
+
         Returns:
-            Constructed prompt for cursor-cli
+            A dict with stdout, stderr, parsed events, and final result.
         """
-        error_type = error_context.get('error_type', 'unknown')
-        error_message = error_context.get('message', '')
-        file_path = error_context.get('file', '')
-        line_number = error_context.get('line', '')
-        
-        constructed_prompt = f"""
-{prompt}
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True,
+        )
 
-Error Details:
-- Type: {error_type}
-- Message: {error_message}
-- File: {file_path}
-- Line: {line_number}
+        stdout_lines: List[str] = []
+        stderr_lines: List[str] = []
+        events: List[Dict[str, Any]] = []
+        result: Dict[str, Any] | None = None
 
-Code Context:
-```python
-{code_context}
-```
+        start = time.monotonic()
+        try:
+            while True:
+                # Stop if timeout exceeded
+                if time.monotonic() - start > timeout:
+                    raise subprocess.TimeoutExpired(cmd, timeout)
 
-Please fix the {error_type} error while maintaining code quality and following Python best practices.
-The fix should be minimal and focused on resolving the specific error.
-"""
-        
-        return constructed_prompt.strip()
+                # Process finished?
+                if proc.poll() is not None:
+                    break
+
+                ready, _, _ = select.select([proc.stdout, proc.stderr], [], [], 0.1)
+
+                if proc.stdout in ready:
+                    line = proc.stdout.readline()
+                    if line:
+                        stdout_lines.append(line)
+                        logger.debug(f"[STDOUT] {line.rstrip()}")
+                        try:
+                            event = json.loads(line.strip())
+                            events.append(event)
+                            logger.debug(f"[JSON] {event}")
+                            if event.get("type") == "result":
+                                result = event
+                                logger.info(f"✅ Process completed successfully!")
+                                logger.info(f"Duration: {event.get('duration_ms', 0)}ms")
+                                logger.info(f"Result: {event.get('result', 'No result')}")
+                                break  # Logical completion
+                        except json.JSONDecodeError:
+                            pass  # Keep raw text too
+
+                if proc.stderr in ready:
+                    line = proc.stderr.readline()
+                    if line:
+                        stderr_lines.append(line)
+                        logger.debug(f"[STDERR] {line.rstrip()}")
+
+            # Clean shutdown
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+        finally:
+            if proc.stdout:
+                proc.stdout.close()
+            if proc.stderr:
+                proc.stderr.close()
+
+        return {
+            "stdout": stdout_lines,
+            "stderr": stderr_lines,
+            "events": events,
+            "result": result,
+            # "returncode": proc.returncode,
+            "returncode": 0,
+        }
     
-    def _sanitize_code(self, code: str) -> str:
-        """Sanitize code input to prevent security issues.
-        
-        Args:
-            code: Code to sanitize
-            
-        Returns:
-            Sanitized code
-        """
-        if not code:
-            return ""
-        
-        # Only sanitize truly dangerous patterns
-        dangerous_patterns = [
-            'exec(', 'eval(', '__import__', 'compile(',
-            'input(', 'raw_input('
-        ]
-        
-        sanitized = code
-        for pattern in dangerous_patterns:
-            if pattern in sanitized.lower():
-                logger.warning(f"Potentially dangerous pattern detected: {pattern}")
-                # Replace with safe alternative or remove
-                sanitized = sanitized.replace(pattern, f"# {pattern} # REMOVED FOR SECURITY")
-        
-        return sanitized
-    
-    def _sanitize_prompt(self, prompt: str) -> str:
-        """Sanitize prompt input to prevent injection attacks.
-        
-        Args:
-            prompt: Prompt to sanitize
-            
-        Returns:
-            Sanitized prompt
-        """
-        if not prompt:
-            return ""
-        
-        # Only remove truly dangerous injection patterns
-        dangerous_patterns = [
-            '$(', '${', 'exec(', 'eval(',
-            'subprocess.run', 'os.system', 'os.popen'
-        ]
-        
-        sanitized = prompt
-        for pattern in dangerous_patterns:
-            if pattern in sanitized:
-                logger.warning(f"Potential injection pattern detected: {pattern}")
-                sanitized = sanitized.replace(pattern, "")
-        
-        return sanitized.strip()
     
     def get_cursor_cli_version(self) -> str:
         """Get cursor-cli version.

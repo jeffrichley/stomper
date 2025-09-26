@@ -120,13 +120,15 @@ class SandboxManager:
                 status_code = line[:2]
                 filename = line[3:]
                 
-                if status_code.startswith('M'):
+                # Git status codes: first char = index, second char = working tree
+                # M = modified, A = added, D = deleted, ?? = untracked
+                if 'M' in status_code:
                     modified.append(filename)
-                elif status_code.startswith('A'):
+                elif 'A' in status_code:
                     added.append(filename)
-                elif status_code.startswith('D'):
+                elif 'D' in status_code:
                     deleted.append(filename)
-                elif status_code.startswith('??'):
+                elif status_code == '??':
                     untracked.append(filename)
             
             return {
@@ -262,159 +264,3 @@ class SandboxManager:
         pass
 
 
-class ProjectAwareCursorClient:
-    """CursorClient that works with git worktree sandboxes."""
-    
-    def __init__(self, sandbox_manager: SandboxManager):
-        """Initialize project-aware cursor client.
-        
-        Args:
-            sandbox_manager: Sandbox manager instance
-        """
-        self.sandbox_manager = sandbox_manager
-        self.base_client = None  # Will be set to CursorClient instance
-    
-    def generate_fix_with_project_context(
-        self,
-        target_file: Path,
-        error_context: Dict[str, Any],
-        prompt: str,
-        sandbox_path: Path
-    ) -> str:
-        """Generate fix with full project context in sandbox.
-        
-        Args:
-            target_file: Target file to fix
-            error_context: Error context information
-            prompt: Fix prompt
-            sandbox_path: Path to sandbox directory
-            
-        Returns:
-            Fixed code content
-        """
-        # Ensure we have a base client
-        if self.base_client is None:
-            from .cursor_client import CursorClient
-            self.base_client = CursorClient()
-        
-        # Handle path resolution - if target_file is already in sandbox, use it directly
-        if str(target_file).startswith(str(sandbox_path)):
-            sandbox_target = target_file
-        else:
-            # Try to resolve relative path
-            try:
-                sandbox_target = sandbox_path / target_file.relative_to(self.sandbox_manager.project_root)
-            except ValueError:
-                # If relative path fails, assume target_file is already the correct path
-                sandbox_target = target_file
-        
-        # Construct enhanced prompt with project context
-        project_context = self.sandbox_manager.create_sandbox_context(sandbox_path)
-        enhanced_prompt = self._enhance_prompt_with_context(prompt, error_context, project_context)
-        
-        # Run cursor-cli directly in the sandbox directory
-        import subprocess
-        import tempfile
-        
-        try:
-            # Run cursor-cli in the sandbox directory with non-interactive flags
-            # Format: cursor-agent --print -f --output-format text agent "prompt" file_path
-            cmd = [
-                "cursor-agent", 
-                "--print",  # Non-interactive mode (print responses)
-                "-f",  # Force allow commands
-                "--output-format", "text",  # Use text output format for non-interactive use
-                "agent",  # Start the Cursor Agent
-                enhanced_prompt,  # Prompt as positional argument
-                str(sandbox_target)  # Target file path
-            ]
-            
-            # Debug: print the command being run
-            logger.info(f"Running cursor-agent command: {' '.join(cmd)}")
-            logger.info(f"Working directory: {sandbox_path}")
-            logger.info(f"Prompt: {enhanced_prompt[:100]}...")
-            
-            # Use Popen for better subprocess handling (as recommended in search results)
-            process = subprocess.Popen(
-                cmd,
-                cwd=sandbox_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            # Use communicate with timeout
-            try:
-                stdout, stderr = process.communicate(timeout=120)
-                result = type('Result', (), {
-                    'returncode': process.returncode,
-                    'stdout': stdout,
-                    'stderr': stderr
-                })()
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                raise subprocess.TimeoutExpired(cmd, 120)
-            
-            # Debug: print the result
-            logger.info(f"cursor-agent return code: {result.returncode}")
-            logger.info(f"cursor-agent stdout: {result.stdout[:200]}...")
-            logger.info(f"cursor-agent stderr: {result.stderr[:200]}...")
-            
-            if result.returncode != 0:
-                raise RuntimeError(f"cursor-cli execution failed: {result.stderr}")
-            
-            # Read the modified file
-            if sandbox_target.exists():
-                fixed_code = sandbox_target.read_text()
-                logger.info(f"Successfully read modified file: {len(fixed_code)} characters")
-            else:
-                raise RuntimeError("cursor-cli did not produce output file")
-            
-            return fixed_code
-            
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("cursor-cli timed out after 120 seconds")
-        except Exception as e:
-            raise RuntimeError(f"Error running cursor-cli: {e}")
-
-    
-    def _enhance_prompt_with_context(
-        self, 
-        prompt: str, 
-        error_context: Dict[str, Any], 
-        project_context: Dict[str, str]
-    ) -> str:
-        """Enhance prompt with project context information.
-        
-        Args:
-            prompt: Original prompt
-            error_context: Error context
-            project_context: Project file context
-            
-        Returns:
-            Enhanced prompt with context
-        """
-        context_info = []
-        
-        # Add relevant files to context
-        for file_path, content in project_context.items():
-            if len(content) < 1000:  # Only include smaller files
-                context_info.append(f"File: {file_path}\n```python\n{content}\n```")
-        
-        enhanced_prompt = f"""
-{prompt}
-
-Project Context:
-{chr(10).join(context_info)}
-
-Error Details:
-- Type: {error_context.get('error_type', 'unknown')}
-- Message: {error_context.get('message', '')}
-- File: {error_context.get('file', '')}
-- Line: {error_context.get('line', '')}
-
-Please fix the error while considering the full project context.
-"""
-        
-        return enhanced_prompt.strip()

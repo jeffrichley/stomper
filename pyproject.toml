@@ -9,7 +9,6 @@ description = "Automated code quality fixing tool"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "click>=8.3.0",
     "langchain>=0.3.27",
     "langgraph>=0.6.7",
     "pathspec>=0.12.1",
@@ -17,8 +16,7 @@ dependencies = [
     "rich>=14.1.0",
     "typer>=0.19.2",
     "gitpython>=3.1.40",
-    "cursor-agent>=0.1.4",
-    "setuptools>=80.9.0",
+    "dotenv>=0.9.9",
 ]
 
 [project.scripts]
