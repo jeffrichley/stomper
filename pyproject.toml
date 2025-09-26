@@ -17,6 +17,8 @@ dependencies = [
     "rich>=14.1.0",
     "typer>=0.19.2",
     "gitpython>=3.1.40",
+    "cursor-agent>=0.1.4",
+    "setuptools>=80.9.0",
 ]
 
 [project.scripts]

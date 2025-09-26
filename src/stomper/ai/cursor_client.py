@@ -279,14 +279,14 @@ The fix should be minimal and focused on resolving the specific error.
         if not prompt:
             return ""
         
-        # Remove potential injection patterns
-        injection_patterns = [
-            '`', '$(', '${', 'exec(', 'eval(',
-            'import os', 'import sys', 'subprocess'
+        # Only remove truly dangerous injection patterns
+        dangerous_patterns = [
+            '$(', '${', 'exec(', 'eval(',
+            'subprocess.run', 'os.system', 'os.popen'
         ]
         
         sanitized = prompt
-        for pattern in injection_patterns:
+        for pattern in dangerous_patterns:
             if pattern in sanitized:
                 logger.warning(f"Potential injection pattern detected: {pattern}")
                 sanitized = sanitized.replace(pattern, "")

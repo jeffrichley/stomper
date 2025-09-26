@@ -10,8 +10,6 @@ import logging
 from git import Repo, GitCommandError
 from git.exc import GitCommandError
 
-from .base import AIAgent, AgentInfo, AgentCapabilities
-
 
 logger = logging.getLogger(__name__)
 
@@ -310,16 +308,76 @@ class ProjectAwareCursorClient:
                 # If relative path fails, assume target_file is already the correct path
                 sandbox_target = target_file
         
-        # Construct prompt with project context
+        # Construct enhanced prompt with project context
         project_context = self.sandbox_manager.create_sandbox_context(sandbox_path)
         enhanced_prompt = self._enhance_prompt_with_context(prompt, error_context, project_context)
         
-        # Use base client but with sandbox path
-        return self.base_client.generate_fix(
-            error_context, 
-            sandbox_target.read_text(), 
-            enhanced_prompt
-        )
+        # Run cursor-cli directly in the sandbox directory
+        import subprocess
+        import tempfile
+        
+        try:
+            # Run cursor-cli in the sandbox directory with non-interactive flags
+            # Format: cursor-agent --print -f --output-format text agent "prompt" file_path
+            cmd = [
+                "cursor-agent", 
+                "--print",  # Non-interactive mode (print responses)
+                "-f",  # Force allow commands
+                "--output-format", "text",  # Use text output format for non-interactive use
+                "agent",  # Start the Cursor Agent
+                enhanced_prompt,  # Prompt as positional argument
+                str(sandbox_target)  # Target file path
+            ]
+            
+            # Debug: print the command being run
+            logger.info(f"Running cursor-agent command: {' '.join(cmd)}")
+            logger.info(f"Working directory: {sandbox_path}")
+            logger.info(f"Prompt: {enhanced_prompt[:100]}...")
+            
+            # Use Popen for better subprocess handling (as recommended in search results)
+            process = subprocess.Popen(
+                cmd,
+                cwd=sandbox_path,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Use communicate with timeout
+            try:
+                stdout, stderr = process.communicate(timeout=120)
+                result = type('Result', (), {
+                    'returncode': process.returncode,
+                    'stdout': stdout,
+                    'stderr': stderr
+                })()
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                raise subprocess.TimeoutExpired(cmd, 120)
+            
+            # Debug: print the result
+            logger.info(f"cursor-agent return code: {result.returncode}")
+            logger.info(f"cursor-agent stdout: {result.stdout[:200]}...")
+            logger.info(f"cursor-agent stderr: {result.stderr[:200]}...")
+            
+            if result.returncode != 0:
+                raise RuntimeError(f"cursor-cli execution failed: {result.stderr}")
+            
+            # Read the modified file
+            if sandbox_target.exists():
+                fixed_code = sandbox_target.read_text()
+                logger.info(f"Successfully read modified file: {len(fixed_code)} characters")
+            else:
+                raise RuntimeError("cursor-cli did not produce output file")
+            
+            return fixed_code
+            
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("cursor-cli timed out after 120 seconds")
+        except Exception as e:
+            raise RuntimeError(f"Error running cursor-cli: {e}")
+
     
     def _enhance_prompt_with_context(
         self, 
