@@ -17,6 +17,7 @@ dependencies = [
     "typer>=0.19.2",
     "gitpython>=3.1.40",
     "dotenv>=0.9.9",
+    "jinja2>=3.1.6",
 ]
 
 [project.scripts]

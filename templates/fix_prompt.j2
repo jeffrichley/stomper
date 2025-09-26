@@ -1,0 +1,175 @@
+# 🧹 Code Cleanup & Quality Enforcement (v2)
+
+## Overview
+Analyze and fix findings from **Ruff** and **Mypy** while preserving behavior and enforcing project standards.
+
+<pre_flight_check>
+INPUT: Raw error data from quality tools (JSON array)
+
+```json
+{% if errors_json_str -%}
+{{ errors_json_str }}
+{%- else -%}
+[
+{%- set comma = joiner(",") -%}
+{%- for group in error_context.error_groups -%}
+  {%- for e in group.errors -%}
+  {{ comma() }}
+  {
+    "tool": "{{ group.tool }}",
+    "file": "{{ e.file }}",
+    "line": {{ e.line }},
+    "column": {{ e.column }},
+    "code": "{{ e.code }}",
+    "message": "{{ e.message }}",
+    "severity": "{{ e.severity }}",
+    "auto_fixable": {{ e.auto_fixable | lower }}
+  }
+  {%- endfor -%}
+{%- endfor -%}
+]
+{%- endif %}
+
+CONFIRM:
+- Use this JSON as the source of truth for errors.
+- Do not alter or reformat the JSON itself.
+- All fixes should correspond to these entries.
+
+ASSUMPTIONS:
+Code context may be supplied for review,  
+but all changes must be applied directly in the git worktree  
+to the files listed in the error JSON.
+
+</pre_flight_check>
+
+<process_flow>
+
+<step number="1" name="analyze_errors">
+### Step 1: Analyze Errors
+
+<analysis_areas>
+
+{%- set tool_errors = {} -%}
+{%- for group in error_context.error_groups -%}
+{%- if group.tool not in tool_errors -%}
+{%- set _ = tool_errors.update({group.tool: []}) -%}
+{%- endif -%}
+{%- for error in group.errors -%}
+{%- set _ = tool_errors[group.tool].append(error) -%}
+{%- endfor -%}
+{%- endfor -%}
+{%- for tool, errors in tool_errors.items() -%}
+{% if errors %}
+**{{ tool.title() }} Errors:**
+{% for e in errors %}- {{ e.file }}:{{ e.line }}:{{ e.column }} — {{ e.code }} — {{ e.message }}
+{% endfor %}
+
+{%- endif -%}
+{%- endfor -%}
+
+**Totals:** 
+{%- set total_errors = 0 -%}
+{%- set total_auto = 0 -%}
+{%- for tool, errors in tool_errors.items() -%}
+{%- if errors -%}
+{%- set total_errors = total_errors + errors | length -%}
+{%- set auto_count = [] -%}
+{%- for error in errors -%}
+{%- if error.auto_fixable -%}
+{%- set _ = auto_count.append(error) -%}
+{%- endif -%}
+{%- endfor -%}
+{%- set total_auto = total_auto + auto_count | length -%}
+{{ tool.title() }} = {{ errors | length }} (auto-fixable = {{ auto_count | length }})
+{%- if not loop.last -%}
+, 
+{%- endif -%}
+{%- endif -%}
+{%- endfor -%}
+</analysis_areas>
+
+<instructions>
+ACTION: Build a change plan mapping each error to one concrete fix.
+OUTPUT: A clear list of which issues go to Step 2 (auto-fix) vs Step 3 (manual).
+</instructions>
+
+
+
+<step number="2" name="apply_auto_fixes">
+### Step 2: Apply Auto-Fixes
+
+<fixing_rules>
+{% for e in errors if e.auto_fixable %}
+- {{ e.file }}:{{ e.line }} — {{ e.code }} — {{ e.message }}
+{% endfor %}
+</fixing_rules>
+
+<instructions>
+ACTION: Apply deterministic auto-fixes without altering behavior.
+ENSURE: Code compiles after changes.
+</instructions>
+</step>
+
+
+
+
+<step number="3" name="resolve_manual_fixes">
+### Step 3: Resolve Manual Fixes
+
+<fixing_rules>
+{% for e in errors if not e.auto_fixable %}
+- {{ e.file }}:{{ e.line }} — {{ e.code }} — {{ e.message }}
+{% endfor %}
+</fixing_rules>
+
+<instructions>
+ACTION: Rewrite code to resolve these findings while preserving logic.
+AVOID: Using # type: ignore.
+ADD: Type hints or code adjustments as required.
+</instructions>
+</step>
+
+
+
+
+<step number="4" name="final_verification">
+### Step 4: Final Verification
+
+<verification>
+- [ ] Ruff passes with no findings
+- [ ] Mypy passes with no errors
+- [ ] All tests green (no regressions)
+- [ ] Code style compliant (max line length {{ project_rules.max_line_length if project_rules and project_rules.max_line_length else 88 }})
+</verification>
+
+<instructions>
+ACTION: Confirm all checks pass and summarize changes made.
+OUTPUT: Full corrected files + bullet summary of fixes.
+</instructions>
+</step>
+
+
+
+</process_flow>
+
+<post_flight_check>
+OUTPUT: Clean, working code with explanation of fixes
+</post_flight_check>
+
+## Code Context
+
+_Code context is available in the git worktree. Apply fixes directly to the files listed in the error JSON._
+
+## Error-Specific Advice
+
+{% for error_code, advice in error_advice.items() %}{{ advice }}
+
+{% endfor %}
+
+## Requirements
+
+1. Fix all listed issues
+2. Maintain existing functionality  
+3. Follow project coding standards
+4. Preserve test compatibility
+
