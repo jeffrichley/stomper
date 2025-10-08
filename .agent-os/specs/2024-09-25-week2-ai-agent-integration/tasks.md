@@ -33,10 +33,10 @@ These are the tasks to be completed for the spec detailed in @.agent-os/specs/20
 
 - [ ] 4. Fix Application and Validation Pipeline
   - [x] 4.1 Write tests for FixApplier class
-  - [ ] 4.2 Implement fix application to source files
-  - [ ] 4.3 Add file backup and restoration
+  - [x] 4.2 Implement fix application to source files
+  - [x] 4.3 Add file backup and restoration
   - [ ] 4.4 Implement fix validation pipeline
-  - [ ] 4.5 Add rollback functionality
+  - [x] 4.5 Add rollback functionality
   - [ ] 4.6 Verify all tests pass
 
 - [ ] 5. Error Mapping and Learning System

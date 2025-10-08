@@ -14,8 +14,21 @@ from stomper.quality.base import QualityError
 @pytest.fixture
 def mock_sandbox_manager():
     """Create a mock sandbox manager for testing."""
+    from git import Repo
+
     mock_mgr = Mock(spec=SandboxManager)
     mock_mgr.project_root = Path("/project")
+
+    # Mock repo for git operations
+    mock_repo = Mock(spec=Repo)
+    mock_repo.is_dirty.return_value = False
+    mock_repo.git.stash.return_value = ""
+    mock_mgr.repo = mock_repo
+
+    # Mock git operations
+    mock_mgr.get_sandbox_diff.return_value = ""
+    mock_mgr.apply_sandbox_patch.return_value = True
+
     return mock_mgr
 
 
@@ -43,13 +56,14 @@ class TestFixApplierInitialization:
     """Test FixApplier initialization."""
 
     @pytest.mark.unit
-    def test_fix_applier_initialization(self, mock_sandbox_manager):
+    def test_fix_applier_initialization(self, mock_sandbox_manager, tmp_path):
         """Test basic FixApplier initialization."""
-        project_root = Path("/project")
+        project_root = tmp_path / "project"
+        project_root.mkdir()
         applier = FixApplier(mock_sandbox_manager, project_root)
 
         assert applier.sandbox_manager == mock_sandbox_manager
-        assert applier.project_root == project_root
+        assert applier.project_root == project_root.resolve()
 
     @pytest.mark.unit
     def test_fix_applier_initialization_validates_project_root(self, mock_sandbox_manager):
