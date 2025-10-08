@@ -129,7 +129,7 @@ class FileScanner:
         # Find all matching files
         for file_path in glob.glob(pattern, recursive=True):
             path = Path(file_path)
-            if not path.is_file() or not path.suffix == ".py":
+            if not path.is_file() or path.suffix != ".py":
                 continue
 
             relative_path = path.relative_to(self.project_root)

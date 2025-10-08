@@ -1,6 +1,7 @@
 """MyPy quality tool integration for Stomper."""
 
 from pathlib import Path
+from typing import Literal
 
 from .base import BaseQualityTool, QualityError
 
@@ -77,7 +78,7 @@ class MyPyTool(BaseQualityTool):
             auto_fixable = False
 
             # MyPy errors are always "error" severity
-            severity = "error"
+            severity: Literal["error", "warning", "info"] = "error"
 
             error = QualityError(
                 tool=self.tool_name,

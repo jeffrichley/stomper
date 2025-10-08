@@ -1,6 +1,5 @@
 """End-to-end tests for CLI functionality."""
 
-
 import pytest
 from typer.testing import CliRunner
 

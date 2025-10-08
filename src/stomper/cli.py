@@ -2,14 +2,12 @@
 
 from pathlib import Path
 
+from rich import box
+from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
-from rich.columns import Columns
 from rich.text import Text
-from rich.align import Align
-from rich import box
 import typer
 
 from stomper.config.loader import ConfigLoader
@@ -33,12 +31,12 @@ def print_header() -> None:
     """Print a beautiful header for Stomper."""
     header_text = Text("Stomper", style="bold blue")
     subtitle = Text("Automated Code Quality Fixing", style="italic dim")
-    
+
     header_panel = Panel(
         Align.center(Text.assemble(header_text, "\n", subtitle)),
         box=box.DOUBLE,
         border_style="blue",
-        padding=(1, 2)
+        padding=(1, 2),
     )
     console.print(header_panel)
     console.print()
@@ -50,24 +48,24 @@ def print_config_summary(config: dict, enabled_tools: list, dry_run: bool) -> No
     table = Table(title="🔧 Configuration", box=box.ROUNDED)
     table.add_column("Setting", style="cyan", no_wrap=True)
     table.add_column("Value", style="white")
-    
+
     # Tool status
     tool_status = "✅ " + ", ".join(enabled_tools) if enabled_tools else "❌ None"
     table.add_row("Enabled Tools", tool_status)
-    
+
     # Dry run status
     dry_run_status = "🔍 Yes" if dry_run else "⚡ No"
     table.add_row("Dry Run", dry_run_status)
-    
+
     # AI Agent
     table.add_row("AI Agent", config.get("ai_agent", "cursor-cli"))
-    
+
     # Max retries
     table.add_row("Max Retries", str(config.get("max_retries", 3)))
-    
+
     # Parallel files
     table.add_row("Parallel Files", str(config.get("parallel_files", 1)))
-    
+
     console.print(table)
     console.print()
 
@@ -78,17 +76,19 @@ def print_file_discovery_summary(discovered_files: list, stats: dict, target_inf
     file_info = Table(box=box.ROUNDED)
     file_info.add_column("📁 File Discovery", style="green", no_wrap=True)
     file_info.add_column("Value", style="white")
-    
+
     file_info.add_row("Target", target_info)
     file_info.add_row("Files Found", f"{len(discovered_files):,}")
     file_info.add_row("Total Size", f"{stats['total_size']:,} bytes")
-    file_info.add_row("Directories", str(len(stats['directories'])))
-    
+    file_info.add_row("Directories", str(len(stats["directories"])))
+
     console.print(file_info)
     console.print()
 
 
-def print_quality_results(all_errors: list, filtered_errors: list, tool_summary: dict, dry_run: bool) -> None:
+def print_quality_results(
+    all_errors: list, filtered_errors: list, tool_summary: dict, dry_run: bool
+) -> None:
     """Print beautiful quality assessment results."""
     if not filtered_errors:
         # No issues found
@@ -96,44 +96,52 @@ def print_quality_results(all_errors: list, filtered_errors: list, tool_summary:
             Align.center(Text("🎉 No matching issues found!", style="bold green")),
             box=box.ROUNDED,
             border_style="green",
-            padding=(1, 2)
+            padding=(1, 2),
         )
         console.print(success_panel)
         return
-    
+
     # Create results table
     results_table = Table(title="🔍 Quality Assessment Results", box=box.ROUNDED)
     results_table.add_column("Tool", style="cyan", no_wrap=True)
     results_table.add_column("Issues", style="red", justify="right")
     results_table.add_column("Status", style="yellow")
-    
+
     for tool, count in tool_summary.items():
         status = "🔍 Dry Run" if dry_run else "⚡ Ready to Fix"
         results_table.add_row(tool, str(count), status)
-    
+
     console.print(results_table)
-    
+
     # Summary panel
     total_issues = len(all_errors)
     filtered_count = len(filtered_errors)
-    
+
     if total_issues != filtered_count:
         summary_text = f"Found {filtered_count:,} issues to fix ({total_issues:,} total, {filtered_count:,} after filtering)"
     else:
         summary_text = f"Found {filtered_count:,} issues to fix"
-    
+
     summary_panel = Panel(
         summary_text,
         title="📊 Summary",
         box=box.ROUNDED,
-        border_style="red" if filtered_errors else "green"
+        border_style="red" if filtered_errors else "green",
     )
     console.print(summary_panel)
-    
+
     if dry_run:
-        console.print(Panel("🔍 Dry run complete - no changes made", box=box.ROUNDED, border_style="yellow"))
+        console.print(
+            Panel("🔍 Dry run complete - no changes made", box=box.ROUNDED, border_style="yellow")
+        )
     else:
-        console.print(Panel("⚡ Quality tool integration complete!\n🔧 Next: AI agent integration for automated fixing", box=box.ROUNDED, border_style="blue"))
+        console.print(
+            Panel(
+                "⚡ Quality tool integration complete!\n🔧 Next: AI agent integration for automated fixing",
+                box=box.ROUNDED,
+                border_style="blue",
+            )
+        )
 
 
 def validate_file_selection(
@@ -158,7 +166,9 @@ def validate_file_selection(
 
     if sum(selection_methods) > 1:
         console.print("[red]Error: Only one file selection method can be used at a time[/red]")
-        console.print("[yellow]Use one of: --file, --files, --directory, --pattern, --git-changed, --git-staged, or --git-diff[/yellow]")
+        console.print(
+            "[yellow]Use one of: --file, --files, --directory, --pattern, --git-changed, --git-staged, or --git-diff[/yellow]"
+        )
         raise typer.Exit(1)
 
 
@@ -175,9 +185,7 @@ def fix(
     files: str | None = typer.Option(
         None, "--files", help="Multiple files to process (comma-separated)"
     ),
-    directory: Path | None = typer.Option(
-        None, "--directory", "-d", help="Directory to process"
-    ),
+    directory: Path | None = typer.Option(None, "--directory", "-d", help="Directory to process"),
     pattern: str | None = typer.Option(
         None, "--pattern", help="Glob pattern to match files (e.g., 'src/**/*.py')"
     ),
@@ -185,9 +193,7 @@ def fix(
     git_changed: bool = typer.Option(
         False, "--git-changed", help="Only process changed (unstaged) files"
     ),
-    git_staged: bool = typer.Option(
-        False, "--git-staged", help="Only process staged files"
-    ),
+    git_staged: bool = typer.Option(False, "--git-staged", help="Only process staged files"),
     git_diff: str | None = typer.Option(
         None, "--git-diff", help="Only process files changed vs specified branch (e.g., 'main')"
     ),
@@ -262,7 +268,7 @@ def fix(
 
     # Print beautiful header
     print_header()
-    
+
     # Prepare enabled tools list
     tools = []
     if ruff:
@@ -271,7 +277,7 @@ def fix(
         tools.append("MyPy")
     if drill_sergeant:
         tools.append("Drill Sergeant")
-    
+
     # Print configuration summary
     config_dict = {
         "ai_agent": final_config.ai_agent,
@@ -329,20 +335,20 @@ def fix(
     elif git_changed or git_staged or git_diff:
         # Git-based file discovery
         from stomper.discovery.git import discover_git_files
-        
+
         git_files = discover_git_files(
             project_root=project_root,
             git_changed=git_changed,
             git_staged=git_staged,
             git_diff=git_diff,
-            python_only=True
+            python_only=True,
         )
-        
+
         # Convert to list and apply max_files limit
         discovered_files = list(git_files)
         if effective_max_files and len(discovered_files) > effective_max_files:
             discovered_files = discovered_files[:effective_max_files]
-        
+
         # Generate target info
         if git_changed:
             target_info = "Changed (unstaged) files"
@@ -352,9 +358,10 @@ def fix(
             target_info = f"Files changed vs {git_diff}"
         else:
             target_info = "Git-tracked files"
-            
+
         # Print git summary
         from stomper.discovery.git import print_git_summary
+
         print_git_summary(set(discovered_files), git_changed, git_staged, git_diff)
     else:
         # Default: scan project root with config patterns
@@ -370,7 +377,7 @@ def fix(
     if discovered_files:
         stats = file_scanner.get_file_stats(discovered_files)
         print_file_discovery_summary(discovered_files, stats, target_info)
-        
+
         if verbose:
             console.print(Panel("📁 Files to process:", box=box.ROUNDED, border_style="blue"))
             for f in discovered_files[:10]:  # Show first 10 files
@@ -379,7 +386,9 @@ def fix(
                 console.print(f"  ... and {len(discovered_files) - 10} more files")
             console.print()
     else:
-        console.print(Panel("⚠️ No files found matching criteria", box=box.ROUNDED, border_style="yellow"))
+        console.print(
+            Panel("⚠️ No files found matching criteria", box=box.ROUNDED, border_style="yellow")
+        )
         raise typer.Exit(0)
 
     # Initialize quality tool manager
@@ -395,7 +404,9 @@ def fix(
         enabled_tools.append("drill-sergeant")
 
     # Run quality tools with pattern-based processing
-    console.print(Panel("🔍 Starting quality assessment...", box=box.ROUNDED, border_style="yellow"))
+    console.print(
+        Panel("🔍 Starting quality assessment...", box=box.ROUNDED, border_style="yellow")
+    )
 
     try:
         # Use post-processing filtering (respects "don't surprise me" rule)
@@ -416,7 +427,7 @@ def fix(
                 all_errors = quality_manager.filter_results_with_stomper_patterns(
                     errors=all_errors,
                     include_patterns=config_files.include,
-                    exclude_patterns=exclude_patterns,
+                    exclude_patterns=exclude_patterns or [],
                     project_root=project_root,
                 )
 
@@ -439,7 +450,9 @@ def fix(
         print_quality_results(all_errors, filtered_errors, tool_summary, dry_run)
 
     except Exception as e:
-        console.print(Panel(f"❌ Error during quality assessment: {e}", box=box.ROUNDED, border_style="red"))
+        console.print(
+            Panel(f"❌ Error during quality assessment: {e}", box=box.ROUNDED, border_style="red")
+        )
         raise typer.Exit(1)
 
 

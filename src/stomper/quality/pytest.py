@@ -49,7 +49,7 @@ class PytestTool(BaseQualityTool):
         errors = []
 
         # Pytest JSON report structure
-        summary = data.get("summary", {})
+        data.get("summary", {})
 
         # Process test results
         for test_data in data.get("tests", []):

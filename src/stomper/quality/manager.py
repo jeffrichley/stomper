@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from .base import BaseQualityTool, QualityError
 from .drill_sergeant import DrillSergeantTool
@@ -151,7 +151,7 @@ class QualityToolManager:
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             TimeElapsedColumn(),
             console=console,
-            expand=True
+            expand=True,
         ) as progress:
             task = progress.add_task("🔧 Running quality tools...", total=len(available_tools))
 
@@ -252,7 +252,7 @@ class QualityToolManager:
         Returns:
             Dictionary mapping tool names to error counts
         """
-        summary = {}
+        summary: dict[str, int] = {}
         for error in errors:
             summary[error.tool] = summary.get(error.tool, 0) + 1
         return summary

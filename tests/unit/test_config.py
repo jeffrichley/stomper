@@ -228,7 +228,7 @@ commit_style = "simple"
     def test_cli_overrides(self):
         """Test CLI argument overrides."""
         loader = ConfigLoader()
-        config = loader.load_config()
+        loader.load_config()
 
         # Create CLI overrides
         overrides = ConfigOverride(ruff=False, mypy=True, drill_sergeant=True)

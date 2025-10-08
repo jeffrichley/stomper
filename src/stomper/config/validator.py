@@ -1,5 +1,6 @@
 """Configuration validation for Stomper."""
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from rich.console import Console
@@ -57,7 +58,7 @@ class ConfigValidator:
 
         return True
 
-    def _validate_quality_tools(self, tools: list[str], project_root: Path) -> None:
+    def _validate_quality_tools(self, tools: Sequence[str], project_root: Path) -> None:
         """Validate quality tools configuration."""
         # Check if tools are available
         for tool in tools:
@@ -70,15 +71,13 @@ class ConfigValidator:
             elif tool == "drill-sergeant":
                 if not self._is_command_available("drill-sergeant"):
                     self.warnings.append("Drill Sergeant is not available in PATH")
-            elif tool == "pytest":
-                if not self._is_command_available("pytest"):
-                    self.warnings.append("Pytest is not available in PATH")
+            elif tool == "pytest" and not self._is_command_available("pytest"):
+                self.warnings.append("Pytest is not available in PATH")
 
     def _validate_ai_agent(self, agent: str) -> None:
         """Validate AI agent configuration."""
-        if agent == "cursor-cli":
-            if not self._is_command_available("cursor"):
-                self.warnings.append("Cursor CLI is not available in PATH")
+        if agent == "cursor-cli" and not self._is_command_available("cursor"):
+            self.warnings.append("Cursor CLI is not available in PATH")
 
     def _validate_processing_options(self, config: StomperConfig) -> None:
         """Validate processing options."""
@@ -154,10 +153,9 @@ class ConfigValidator:
             self.errors.append(f"Specified path is not a directory: {overrides.directory}")
 
         # Validate error types
-        if overrides.error_type:
+        if overrides.error_type and not overrides.error_type.isalnum():
             # Basic validation - could be enhanced with actual error code validation
-            if not overrides.error_type.isalnum():
-                self.warnings.append(f"Error type '{overrides.error_type}' may not be valid")
+            self.warnings.append(f"Error type '{overrides.error_type}' may not be valid")
 
         # Validate ignore patterns
         if overrides.ignore:

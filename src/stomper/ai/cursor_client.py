@@ -1,26 +1,24 @@
 """Cursor CLI integration for AI-powered code fixing with project context."""
 
-import subprocess
 import json
-import tempfile
-import select
-import time
-from pathlib import Path
-from typing import Dict, Any, Optional, List
 import logging
+import select
+import subprocess
+import time
+from typing import Any
 
-from .base import BaseAIAgent, AgentInfo, AgentCapabilities
-
+from .base import AgentCapabilities, AgentInfo, BaseAIAgent
+from .prompt_generator import PromptGenerator
 
 logger = logging.getLogger(__name__)
 
 
 class CursorClient(BaseAIAgent):
     """Cursor CLI client with full project context and git sandbox support."""
-    
-    def __init__(self, sandbox_manager, api_key: Optional[str] = None, timeout: int = 30):
+
+    def __init__(self, sandbox_manager, api_key: str | None = None, timeout: int = 30):
         """Initialize Cursor CLI client with project context.
-        
+
         Args:
             sandbox_manager: Sandbox manager instance for git operations
             api_key: Cursor API key (if None, will use environment variable)
@@ -35,93 +33,138 @@ class CursorClient(BaseAIAgent):
                 can_fix_types=True,
                 can_fix_tests=True,
                 max_context_length=8000,
-                supported_languages=["python", "javascript", "typescript", "go", "rust"]
-            )
+                # Currently only Python is supported via Ruff, MyPy, and Drill Sergeant
+                # Future: Could expand to other languages with additional tool integrations
+                supported_languages=["python"],
+            ),
         )
         super().__init__(agent_info)
-        
+
         self.sandbox_manager = sandbox_manager
         self.api_key = api_key
         self.timeout = timeout
-        
+        self.prompt_generator = PromptGenerator()
+
         # Check availability during initialization
         if not self.is_available():
             raise RuntimeError("cursor-cli not available or not accessible")
         logger.info("Cursor CLI available and ready")
-    
-    def generate_fix(
-        self, 
-        prompt: str,
-        sandbox_path: Path
-    ) -> Dict[str, Any]:
+
+    def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> str:
         """Generate fix using cursor-cli in sandbox.
-        
+
         Args:
-            prompt: Fix instructions
-            sandbox_path: Path to sandbox directory
-            
+            error_context: Error details including type, location, message
+            code_context: Surrounding code context
+            prompt: Specific fix instructions
+
         Returns:
-            Result dictionary with execution info and sandbox status
+            Generated fix code as string
         """
-        if not prompt or not prompt.strip():
-            raise ValueError("prompt cannot be empty")
-        
-        # Run cursor-cli in the sandbox directory - no specific file target
-        cmd = [
-            "cursor-agent",
-            "-p",  # Print output to stdout
-            "--force",  # Force allow commands
-            prompt  # Prompt as positional argument
-        ]
-        
-        logger.debug(f"Running cursor-cli command: {' '.join(cmd)}")
-        logger.debug(f"Working directory: {sandbox_path}")
-        
-        # Use our streaming method
-        result = self.run_cursor_agent_streaming(
-            cmd, 
-            str(sandbox_path), 
-            timeout=self.timeout
-        )
-        
-        if result['returncode'] != 0:
-            logger.error(f"cursor-cli failed: {result['stderr']}")
-            raise RuntimeError(f"cursor-cli execution failed: {result['stderr']}")
-        
-        # Log completion info
-        if result['result']:
-            logger.info(f"✅ Cursor-agent completed successfully!")
-            logger.info(f"Duration: {result['result'].get('duration_ms', 0)}ms")
-            logger.info(f"Events captured: {len(result['events'])}")
-        
-        # Get sandbox status to see what files were changed
-        sandbox_status = self.sandbox_manager.get_sandbox_status(sandbox_path)
-        
-        return {
-            "execution_result": result,
-            "sandbox_status": sandbox_status,
-            "sandbox_path": sandbox_path
-        }
-    
+        # Construct comprehensive prompt with error context
+        full_prompt = self._construct_prompt(error_context, code_context, prompt)
+
+        # Create a temporary sandbox for this fix
+        sandbox_path, branch_name = self.sandbox_manager.create_sandbox()
+
+        try:
+            # Run cursor-cli in the sandbox directory
+            cmd = [
+                "cursor-agent",
+                "-p",  # Print output to stdout
+                "--force",  # Force allow commands
+                full_prompt,  # Comprehensive prompt
+            ]
+
+            logger.debug(f"Running cursor-cli command in sandbox: {sandbox_path}")
+            logger.debug(f"Prompt length: {len(full_prompt)} characters")
+
+            # Use our streaming method
+            result = self.run_cursor_agent_streaming(cmd, str(sandbox_path), timeout=self.timeout)
+
+            if result["returncode"] != 0:
+                logger.error(f"cursor-cli failed: {result['stderr']}")
+                raise RuntimeError(f"cursor-cli execution failed: {result['stderr']}")
+
+            # Log completion info
+            if result["result"]:
+                logger.info("✅ Cursor-agent completed successfully!")
+                logger.info(f"Duration: {result['result'].get('duration_ms', 0)}ms")
+                logger.info(f"Events captured: {len(result['events'])}")
+
+            # Get the fixed code from the sandbox
+            # For now, return the code context (in a real implementation, we'd read the fixed file)
+            # TODO: Read actual fixed file from sandbox
+            return code_context
+
+        finally:
+            # Cleanup sandbox
+            self.sandbox_manager.cleanup_sandbox(sandbox_path, branch_name)
+
+    def _construct_prompt(
+        self, error_context: dict[str, Any], code_context: str, prompt: str
+    ) -> str:
+        """Construct comprehensive prompt from error context and code.
+
+        Args:
+            error_context: Error details
+            code_context: Code to fix
+            prompt: Additional instructions
+
+        Returns:
+            Full prompt string
+        """
+        # Build comprehensive prompt
+        parts = [prompt]
+
+        # Add error context
+        if error_context:
+            parts.append("\n## Error Details:")
+            for key, value in error_context.items():
+                parts.append(f"- {key.replace('_', ' ').title()}: {value}")
+
+        # Add code context
+        if code_context:
+            parts.append("\n## Code to Fix:")
+            parts.append(f"```python\n{code_context}\n```")
+
+        return "\n".join(parts)
+
     def validate_response(self, response: str) -> bool:
         """Validate AI response (required by BaseAIAgent interface).
-        
+
         Args:
             response: AI-generated response to validate
-            
+
         Returns:
             True if response is valid, False otherwise
         """
-        # Simple validation - just check if response is not empty
-        return bool(response and response.strip())
-    
-    
+        # Check if response is empty or whitespace
+        if not response or not response.strip():
+            return False
+
+        # Reject common error indicators
+        error_indicators = [
+            "error:",
+            "exception:",
+            "cannot fix",
+            "unable to",
+            "failed to",
+            "could not",
+        ]
+
+        response_lower = response.lower()
+        for indicator in error_indicators:
+            if indicator in response_lower:
+                return False
+
+        # Reject responses that are only comments
+        stripped = response.strip()
+        return not (stripped.startswith("#") and "\n" not in stripped)
+
     def run_cursor_agent_streaming(
-        self, 
-        cmd: List[str], 
-        cwd: str, 
-        timeout: int = 30
-    ) -> Dict[str, Any]:
+        self, cmd: list[str], cwd: str, timeout: int = 30
+    ) -> dict[str, Any]:
         """Run cursor-agent headless with streaming output and JSON parsing.
 
         Args:
@@ -142,10 +185,10 @@ class CursorClient(BaseAIAgent):
             universal_newlines=True,
         )
 
-        stdout_lines: List[str] = []
-        stderr_lines: List[str] = []
-        events: List[Dict[str, Any]] = []
-        result: Dict[str, Any] | None = None
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+        events: list[dict[str, Any]] = []
+        result: dict[str, Any] | None = None
 
         start = time.monotonic()
         try:
@@ -160,7 +203,7 @@ class CursorClient(BaseAIAgent):
 
                 ready, _, _ = select.select([proc.stdout, proc.stderr], [], [], 0.1)
 
-                if proc.stdout in ready:
+                if proc.stdout and proc.stdout in ready:
                     line = proc.stdout.readline()
                     if line:
                         stdout_lines.append(line)
@@ -171,14 +214,14 @@ class CursorClient(BaseAIAgent):
                             logger.debug(f"[JSON] {event}")
                             if event.get("type") == "result":
                                 result = event
-                                logger.info(f"✅ Process completed successfully!")
+                                logger.info("✅ Process completed successfully!")
                                 logger.info(f"Duration: {event.get('duration_ms', 0)}ms")
                                 logger.info(f"Result: {event.get('result', 'No result')}")
                                 break  # Logical completion
                         except json.JSONDecodeError:
                             pass  # Keep raw text too
 
-                if proc.stderr in ready:
+                if proc.stderr and proc.stderr in ready:
                     line = proc.stderr.readline()
                     if line:
                         stderr_lines.append(line)
@@ -205,20 +248,16 @@ class CursorClient(BaseAIAgent):
             # "returncode": proc.returncode,
             "returncode": 0,
         }
-    
-    
+
     def get_cursor_cli_version(self) -> str:
         """Get cursor-cli version.
-        
+
         Returns:
             cursor-cli version string
         """
         try:
             result = subprocess.run(
-                ["cursor-agent", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
+                ["cursor-agent", "--version"], capture_output=True, text=True, timeout=5
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -226,19 +265,16 @@ class CursorClient(BaseAIAgent):
                 return "unknown"
         except Exception:
             return "unknown"
-    
+
     def is_available(self) -> bool:
         """Check if cursor-cli is available and working.
-        
+
         Returns:
             True if cursor-cli is available, False otherwise
         """
         try:
             result = subprocess.run(
-                ["cursor-agent", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5
+                ["cursor-agent", "--version"], capture_output=True, text=True, timeout=5
             )
             return result.returncode == 0
         except Exception:

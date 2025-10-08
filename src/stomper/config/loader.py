@@ -104,7 +104,7 @@ class ConfigLoader:
 
     def _load_env_overrides(self) -> dict[str, Any]:
         """Load configuration overrides from environment variables."""
-        overrides = {}
+        overrides: dict[str, Any] = {}
 
         # Quality tools
         if tools := os.getenv("STOMPER_QUALITY_TOOLS"):

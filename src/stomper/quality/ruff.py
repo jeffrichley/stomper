@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from .base import BaseQualityTool, QualityError
 
@@ -119,7 +120,7 @@ class RuffTool(BaseQualityTool):
             }
 
             code = violation.get("code", "UNKNOWN")
-            severity = "warning"  # default
+            severity_str = "warning"  # default
             if code:
                 # Extract prefix for severity mapping
                 # For codes like "E501", extract just "E"
@@ -128,7 +129,12 @@ class RuffTool(BaseQualityTool):
                 else:
                     # For codes like "E501", take the first letter(s)
                     prefix = code[0] if code[0].isalpha() else code
-                severity = severity_map.get(prefix, "warning")
+                severity_str = severity_map.get(prefix, "warning")
+
+            # Cast to literal type
+            severity: Literal["error", "warning", "info"] = (
+                severity_str if severity_str in ("error", "warning", "info") else "warning"  # type: ignore[assignment]
+            )
 
             error = QualityError(
                 tool=self.tool_name,

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from .base import BaseQualityTool, QualityError
 
@@ -59,7 +60,7 @@ class DrillSergeantTool(BaseQualityTool):
             message = violation.get("message", "")
 
             # Drill Sergeant violations are typically warnings about test quality
-            severity = "warning"
+            severity: Literal["error", "warning", "info"] = "warning"
             auto_fixable = False  # Most test quality issues require manual fixes
 
             error = QualityError(
