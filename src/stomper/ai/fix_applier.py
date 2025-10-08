@@ -115,17 +115,17 @@ class FixApplier:
                     error_message="No safe files to apply" if unsafe_files else None,
                 )
 
+            # Handle dry run mode (report changes without applying)
+            if dry_run:
+                logger.info(f"[DRY RUN] Would apply changes to {len(safe_files)} files")
+                files_to_apply = [self.project_root / f for f in safe_files]
+                return ApplyResult(success=True, files_applied=files_to_apply, files_failed=[])
+
             # Try git patch approach first (ideal for atomicity and metadata preservation)
             diff_content = self.sandbox_manager.get_sandbox_diff(sandbox_path, "HEAD")
 
             if diff_content.strip():
                 logger.debug("Using git patch approach for fix application")
-
-                if dry_run:
-                    # In dry run, just report what would be applied
-                    logger.info(f"[DRY RUN] Would apply changes to {len(safe_files)} files")
-                    files_to_apply = [self.project_root / f for f in safe_files]
-                    return ApplyResult(success=True, files_applied=files_to_apply, files_failed=[])
 
                 # Apply the patch using GitPython
                 success = self.sandbox_manager.apply_sandbox_patch(
@@ -141,7 +141,7 @@ class FixApplier:
 
             # Fallback: Manual file operations (for edge cases, testing, or when git patch unavailable)
             logger.debug("Using manual file operations for fix application")
-            return self._apply_fixes_manually(sandbox_path, safe_files, dry_run)
+            return self._apply_fixes_manually(sandbox_path, safe_files, dry_run=False)
 
         except Exception as e:
             logger.error(f"Failed to apply fixes: {e}")
@@ -201,18 +201,29 @@ class FixApplier:
                     continue
 
                 # Handle additions and modifications
-                content = sandbox_file.read_text(encoding="utf-8")
-                if not dry_run:
-                    source_file.parent.mkdir(parents=True, exist_ok=True)
-                    # Preserve executable bit if it was set
-                    preserve_exec = source_file.exists() and self._is_executable(source_file)
-                    source_file.write_text(content, encoding="utf-8")
-                    if preserve_exec:
-                        self._make_executable(source_file)
-                    logger.info(f"Applied: {relative_path}")
-                files_applied.append(source_file)
+                # Try text first, fallback to binary for non-UTF8 files
+                try:
+                    content = sandbox_file.read_text(encoding="utf-8")
+                    if not dry_run:
+                        source_file.parent.mkdir(parents=True, exist_ok=True)
+                        # Preserve executable bit if it was set
+                        preserve_exec = source_file.exists() and self._is_executable(source_file)
+                        source_file.write_text(content, encoding="utf-8")
+                        if preserve_exec:
+                            self._make_executable(source_file)
+                        logger.info(f"Applied: {relative_path}")
+                    files_applied.append(source_file)
+                except UnicodeDecodeError:
+                    # Handle as binary file
+                    if not dry_run:
+                        source_file.parent.mkdir(parents=True, exist_ok=True)
+                        import shutil
 
-            except (OSError, PermissionError, UnicodeDecodeError) as e:
+                        shutil.copy2(sandbox_file, source_file)
+                        logger.info(f"Applied (binary): {relative_path}")
+                    files_applied.append(source_file)
+
+            except (OSError, PermissionError) as e:
                 error_msg = f"Failed to apply {relative_path}: {e}"
                 logger.error(error_msg)
                 error_messages.append(error_msg)

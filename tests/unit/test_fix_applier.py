@@ -7,7 +7,7 @@ import pytest
 
 from stomper.ai.fix_applier import FixApplier
 from stomper.ai.sandbox_manager import SandboxManager
-from stomper.models.cli import ApplyResult, RollbackReason
+from stomper.models.cli import ApplyResult, RollbackReason, ValidationResult
 from stomper.quality.base import QualityError
 
 
@@ -369,9 +369,10 @@ class TestFixApplierErrorHandling:
             "untracked": [],
         }
 
-        # Execute with mocked permission error
-        with patch("builtins.open", side_effect=PermissionError("Permission denied")):
-            applier = FixApplier(mock_sandbox_manager, project_root)
+        # Execute with mocked permission error on write
+        applier = FixApplier(mock_sandbox_manager, project_root)
+
+        with patch.object(Path, "write_text", side_effect=PermissionError("Permission denied")):
             result = applier.apply_fixes(sandbox_path)
 
             # Verify - should handle gracefully
@@ -541,24 +542,25 @@ class TestFixApplierBackupRestore:
     """Test file backup and restoration functionality."""
 
     @pytest.mark.unit
-    def test_backup_files_creates_git_stash(self, mock_sandbox_manager):
+    def test_backup_files_creates_git_stash(self, mock_sandbox_manager, tmp_path):
         """Test creating git stash backup before applying fixes."""
         # Setup
-        project_root = Path("/project")
-        files_to_backup = [Path("src/main.py"), Path("src/utils.py")]
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        files_to_backup = [project_root / "src/main.py", project_root / "src/utils.py"]
 
         mock_repo = Mock()
-        mock_repo.git.stash.return_value = "Saved working directory"
+        mock_repo.is_dirty.return_value = True  # Has changes to stash
+        mock_repo.git.stash.return_value = "stash@{0}: WIP on main: abc1234 Test"
         mock_sandbox_manager.repo = mock_repo
 
         # Execute
-        with patch.object(Path, "exists", return_value=True):
-            applier = FixApplier(mock_sandbox_manager, project_root)
-            stash_ref = applier.backup_files(files_to_backup)
+        applier = FixApplier(mock_sandbox_manager, project_root)
+        stash_ref = applier.backup_files(files_to_backup)
 
-            # Verify
-            assert stash_ref is not None
-            assert "stash@{" in stash_ref or stash_ref.startswith("WIP")
+        # Verify
+        assert stash_ref is not None
+        assert "stash@{" in stash_ref or stash_ref.startswith("WIP")
 
     @pytest.mark.unit
     def test_restore_files_from_git_stash(self, mock_sandbox_manager):
@@ -650,8 +652,8 @@ class TestFixApplierValidation:
 
         # Mock validator
         mock_validator = Mock()
-        mock_validator.validate_fixes.return_value = Mock(
-            passed=True, errors_fixed=1, errors_remaining=0, new_errors_introduced=0
+        mock_validator.validate_fixes.return_value = ValidationResult(
+            passed=True, errors_fixed=1, errors_remaining=0, new_errors_introduced=0, summary="Success"
         )
 
         # Execute
@@ -692,8 +694,8 @@ class TestFixApplierValidation:
 
         # Mock validator to fail
         mock_validator = Mock()
-        mock_validator.validate_fixes.return_value = Mock(
-            passed=False, errors_fixed=0, errors_remaining=1, new_errors_introduced=2
+        mock_validator.validate_fixes.return_value = ValidationResult(
+            passed=False, errors_fixed=0, errors_remaining=1, new_errors_introduced=2, summary="Failed"
         )
 
         # Mock git operations for backup/restore
@@ -976,7 +978,7 @@ class TestFixApplierFullWorkflow:
         }
 
         mock_validator = Mock()
-        mock_validator.validate_fixes.return_value = Mock(
+        mock_validator.validate_fixes.return_value = ValidationResult(
             passed=True, errors_fixed=1, errors_remaining=0, new_errors_introduced=0, summary="Success"
         )
 
@@ -1023,7 +1025,7 @@ class TestFixApplierFullWorkflow:
 
         # Mock validator to fail (introduced new errors)
         mock_validator = Mock()
-        mock_validator.validate_fixes.return_value = Mock(
+        mock_validator.validate_fixes.return_value = ValidationResult(
             passed=False,
             errors_fixed=1,
             errors_remaining=0,
@@ -1215,13 +1217,13 @@ class TestFixApplierSecurity:
         }
 
         # Execute
-        with patch.object(Path, "exists", return_value=True):
-            applier = FixApplier(mock_sandbox_manager, project_root)
-            result = applier.apply_fixes(sandbox_path)
+        applier = FixApplier(mock_sandbox_manager, project_root)
+        result = applier.apply_fixes(sandbox_path)
 
-            # Verify - should reject all path traversal attempts
-            assert len(result.files_failed) == 2
-            assert not (tmp_path.parent / "outside.py").exists()
+        # Verify - should reject all path traversal attempts
+        assert len(result.files_failed) == 2
+        # Verify no files were created outside project root
+        assert not (tmp_path.parent / "outside.py").exists()
 
     @pytest.mark.unit
     def test_reject_absolute_paths_outside_project(self, mock_sandbox_manager, tmp_path):
