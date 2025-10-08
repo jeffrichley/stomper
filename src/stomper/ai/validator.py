@@ -9,6 +9,7 @@ from pathlib import Path
 
 from stomper.models.cli import ErrorComparison, ValidationResult
 from stomper.quality.base import BaseQualityTool, QualityError
+from stomper.quality.manager import QualityToolManager
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +17,17 @@ logger = logging.getLogger(__name__)
 class FixValidator:
     """Validates AI-generated fixes using quality tools."""
 
-    def __init__(self, project_root: Path, quality_tools: list[BaseQualityTool]):
+    def __init__(
+        self,
+        project_root: Path,
+        quality_tools: list[BaseQualityTool] | QualityToolManager | None = None,
+    ):
         """Initialize fix validator.
 
         Args:
             project_root: Root path of the project
-            quality_tools: List of quality tools to use for validation
+            quality_tools: List of quality tools OR QualityToolManager instance.
+                          If None, creates new QualityToolManager.
 
         Raises:
             ValueError: If project root doesn't exist
@@ -30,7 +36,18 @@ class FixValidator:
             raise ValueError(f"Project root does not exist: {project_root}")
 
         self.project_root = project_root
-        self.quality_tools = quality_tools
+
+        # Accept either QualityToolManager or list of tools (backwards compatible)
+        if isinstance(quality_tools, QualityToolManager):
+            self.tool_manager: QualityToolManager | None = quality_tools
+            self.quality_tools: list[BaseQualityTool] = []  # Keep for backwards compat
+        elif quality_tools is None:
+            self.tool_manager = QualityToolManager()
+            self.quality_tools = []
+        else:
+            # Legacy: list of tools - create manager with those tools
+            self.quality_tools = quality_tools
+            self.tool_manager = None  # Will use manual tool running
 
     def validate_fixes(
         self, files: list[Path], original_errors: list[QualityError]
@@ -47,7 +64,11 @@ class FixValidator:
         # Handle empty file list
         if not files:
             return ValidationResult(
-                passed=True, errors_fixed=0, errors_remaining=0, new_errors_introduced=0, summary="No files to validate"
+                passed=True,
+                errors_fixed=0,
+                errors_remaining=0,
+                new_errors_introduced=0,
+                summary="No files to validate",
             )
 
         # Run quality checks on fixed files
@@ -72,6 +93,37 @@ class FixValidator:
         Returns:
             List of QualityError objects found
         """
+        # Use QualityToolManager if available (preferred - reuses existing infrastructure)
+        if self.tool_manager:
+            # Run tools on project root (they handle their own file filtering)
+            # Get all available tools from the manager
+            available_tool_names = self.tool_manager.get_available_tools()
+
+            logger.debug(f"Using QualityToolManager with tools: {available_tool_names}")
+            all_errors = self.tool_manager.run_tools(
+                target_path=self.project_root,
+                project_root=self.project_root,
+                enabled_tools=available_tool_names,
+                max_errors=10000,  # Don't limit errors during validation
+            )
+
+            # Filter to only errors in our fixed files
+            filtered_errors = self._filter_errors_to_files(all_errors, files)
+            logger.debug(f"Filtered to {len(filtered_errors)} errors in {len(files)} fixed files")
+            return filtered_errors
+
+        # Legacy fallback: Manual tool running (for backwards compatibility with tests)
+        return self._run_tools_manually(files)
+
+    def _run_tools_manually(self, files: list[Path]) -> list[QualityError]:
+        """Run quality tools manually (legacy/testing fallback).
+
+        Args:
+            files: List of files to check
+
+        Returns:
+            List of QualityError objects found
+        """
         all_errors: list[QualityError] = []
 
         # Run each available tool
@@ -81,39 +133,11 @@ class FixValidator:
                 continue
 
             try:
-                # Run tool on each file
-                # Note: Some tools work better with directory, some with individual files
-                # For now, run on project root and filter errors to our files later
+                # Run tool on project root
                 errors = tool.run_tool(self.project_root, self.project_root)
 
                 # Filter to only errors in our fixed files
-                # Build set of file paths (both absolute and relative) for matching
-                file_set_absolute = {f.resolve() if f.is_absolute() else (self.project_root / f).resolve() for f in files}
-                file_set_relative = {
-                    f.relative_to(self.project_root) if f.is_absolute() and f.is_relative_to(self.project_root) else f
-                    for f in files
-                }
-
-                filtered_errors = []
-                for e in errors:
-                    # Try to match by absolute path
-                    if e.file.resolve() in file_set_absolute:
-                        filtered_errors.append(e)
-                        continue
-
-                    # Try to match by relative path
-                    try:
-                        error_relative = (
-                            e.file.relative_to(self.project_root)
-                            if e.file.is_absolute()
-                            else e.file
-                        )
-                        if error_relative in file_set_relative:
-                            filtered_errors.append(e)
-                    except ValueError:
-                        # File not in project root
-                        pass
-
+                filtered_errors = self._filter_errors_to_files(errors, files)
                 all_errors.extend(filtered_errors)
                 logger.debug(f"{tool.tool_name}: {len(filtered_errors)} errors in fixed files")
 
@@ -122,6 +146,49 @@ class FixValidator:
                 # Continue with other tools
 
         return all_errors
+
+    def _filter_errors_to_files(
+        self, errors: list[QualityError], files: list[Path]
+    ) -> list[QualityError]:
+        """Filter errors to only those in specified files.
+
+        Args:
+            errors: All errors from quality tools
+            files: Files to filter to
+
+        Returns:
+            Filtered list of errors
+        """
+        # Build set of file paths (both absolute and relative) for matching
+        file_set_absolute = {
+            f.resolve() if f.is_absolute() else (self.project_root / f).resolve() for f in files
+        }
+        file_set_relative = {
+            f.relative_to(self.project_root)
+            if f.is_absolute() and f.is_relative_to(self.project_root)
+            else f
+            for f in files
+        }
+
+        filtered_errors = []
+        for e in errors:
+            # Try to match by absolute path
+            if e.file.resolve() in file_set_absolute:
+                filtered_errors.append(e)
+                continue
+
+            # Try to match by relative path
+            try:
+                error_relative = (
+                    e.file.relative_to(self.project_root) if e.file.is_absolute() else e.file
+                )
+                if error_relative in file_set_relative:
+                    filtered_errors.append(e)
+            except ValueError:
+                # File not in project root
+                pass
+
+        return filtered_errors
 
     def _compare_errors(
         self, original: list[QualityError], new: list[QualityError]
@@ -221,4 +288,3 @@ class FixValidator:
             new_errors=comparison.introduced,
             summary=summary,
         )
-

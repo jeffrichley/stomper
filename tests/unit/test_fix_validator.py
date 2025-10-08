@@ -98,7 +98,9 @@ class TestFixValidatorSuccess:
     """Test successful validation scenarios."""
 
     @pytest.mark.unit
-    def test_validate_fixes_all_errors_fixed(self, tmp_path, mock_quality_tools, sample_quality_errors):
+    def test_validate_fixes_all_errors_fixed(
+        self, tmp_path, mock_quality_tools, sample_quality_errors
+    ):
         """Test validation when all errors are fixed."""
         # Setup
         project_root = tmp_path / "project"
@@ -701,7 +703,9 @@ class TestFixValidatorEdgeCases:
         validator = FixValidator(project_root, mock_quality_tools)
 
         # Execute
-        result = validator.validate_fixes(files=[Path("src/main.py")], original_errors=[original_error])
+        result = validator.validate_fixes(
+            files=[Path("src/main.py")], original_errors=[original_error]
+        )
 
         # Verify - one fixed, one introduced
         assert result.passed is False
@@ -881,7 +885,9 @@ class TestValidationStrategy:
         validator = FixValidator(project_root, mock_quality_tools)
 
         # Same error count: 2 fixed, 2 introduced
-        comparison = ErrorComparison(fixed=[Mock(), Mock()], remaining=[], introduced=[Mock(), Mock()])
+        comparison = ErrorComparison(
+            fixed=[Mock(), Mock()], remaining=[], introduced=[Mock(), Mock()]
+        )
 
         result = validator._generate_result(comparison)
 
@@ -899,7 +905,9 @@ class TestFixValidatorWithFixApplier:
     """Test FixValidator working with FixApplier."""
 
     @pytest.mark.unit
-    def test_validator_interface_matches_protocol(self, tmp_path, mock_quality_tools, sample_quality_errors):
+    def test_validator_interface_matches_protocol(
+        self, tmp_path, mock_quality_tools, sample_quality_errors
+    ):
         """Test that FixValidator implements the Protocol expected by FixApplier."""
         # Setup
         project_root = tmp_path / "project"
@@ -953,11 +961,8 @@ class TestValidationResultModel:
     @pytest.mark.unit
     def test_error_comparison_model(self):
         """Test ErrorComparison model."""
-        comparison = ErrorComparison(
-            fixed=[Mock(), Mock()], remaining=[Mock()], introduced=[]
-        )
+        comparison = ErrorComparison(fixed=[Mock(), Mock()], remaining=[Mock()], introduced=[])
 
         assert len(comparison.fixed) == 2
         assert len(comparison.remaining) == 1
         assert len(comparison.introduced) == 0
-
