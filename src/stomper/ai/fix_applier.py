@@ -24,6 +24,7 @@ if TYPE_CHECKING:
             self, files: list[Path], original_errors: list[QualityError]
         ) -> ValidationResult: ...
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -93,7 +94,8 @@ class FixApplier:
             if target_files:
                 # Convert target files to relative paths
                 target_relative = {
-                    f if not f.is_absolute() else f.relative_to(self.project_root) for f in target_files
+                    f if not f.is_absolute() else f.relative_to(self.project_root)
+                    for f in target_files
                 }
                 changed_files = [f for f in changed_files if f in target_relative]
 
@@ -134,7 +136,9 @@ class FixApplier:
 
                 if success:
                     applied_files = [self.project_root / f for f in safe_files]
-                    logger.info(f"✅ Successfully applied fixes to {len(applied_files)} files via git patch")
+                    logger.info(
+                        f"✅ Successfully applied fixes to {len(applied_files)} files via git patch"
+                    )
                     return ApplyResult(success=True, files_applied=applied_files, files_failed=[])
                 else:
                     logger.warning("Git patch failed, falling back to manual file operations")
@@ -181,7 +185,8 @@ class FixApplier:
                 # Normalize path for comparison (handle both Path and string, forward/backslash)
                 relative_normalized = str(relative_path).replace("\\", "/")
                 is_deletion = any(
-                    str(deleted).replace("\\", "/") == relative_normalized for deleted in deleted_files
+                    str(deleted).replace("\\", "/") == relative_normalized
+                    for deleted in deleted_files
                 )
 
                 # Handle deletions
@@ -490,7 +495,9 @@ class FixApplier:
                 )
 
             # Step 4: Validate fixes
-            validation_result = validator.validate_fixes(apply_result.files_applied, original_errors)
+            validation_result = validator.validate_fixes(
+                apply_result.files_applied, original_errors
+            )
 
             # Step 5: Check if rollback needed
             should_rollback, reason = self._should_rollback(validation_result)
@@ -554,4 +561,3 @@ class FixApplier:
 
         # No rollback needed
         return False, None
-

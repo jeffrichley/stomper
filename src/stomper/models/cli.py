@@ -65,7 +65,9 @@ class ApplyResult(BaseModel):
     files_applied: list[Path] = Field(
         default_factory=list, description="List of files successfully applied"
     )
-    files_failed: list[Path] = Field(default_factory=list, description="List of files that failed to apply")
+    files_failed: list[Path] = Field(
+        default_factory=list, description="List of files that failed to apply"
+    )
     backup_ref: str | None = Field(default=None, description="Git stash reference for backup")
     error_message: str | None = Field(default=None, description="Error message if failed")
 

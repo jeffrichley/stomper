@@ -653,7 +653,11 @@ class TestFixApplierValidation:
         # Mock validator
         mock_validator = Mock()
         mock_validator.validate_fixes.return_value = ValidationResult(
-            passed=True, errors_fixed=1, errors_remaining=0, new_errors_introduced=0, summary="Success"
+            passed=True,
+            errors_fixed=1,
+            errors_remaining=0,
+            new_errors_introduced=0,
+            summary="Success",
         )
 
         # Execute
@@ -669,7 +673,9 @@ class TestFixApplierValidation:
         assert result.rolled_back is False
 
     @pytest.mark.unit
-    def test_apply_and_validate_with_rollback(self, mock_sandbox_manager, tmp_path, sample_quality_error):
+    def test_apply_and_validate_with_rollback(
+        self, mock_sandbox_manager, tmp_path, sample_quality_error
+    ):
         """Test automatic rollback when validation fails."""
         # Setup
         project_root = tmp_path / "project"
@@ -695,7 +701,11 @@ class TestFixApplierValidation:
         # Mock validator to fail
         mock_validator = Mock()
         mock_validator.validate_fixes.return_value = ValidationResult(
-            passed=False, errors_fixed=0, errors_remaining=1, new_errors_introduced=2, summary="Failed"
+            passed=False,
+            errors_fixed=0,
+            errors_remaining=1,
+            new_errors_introduced=2,
+            summary="Failed",
         )
 
         # Mock git operations for backup/restore
@@ -979,7 +989,11 @@ class TestFixApplierFullWorkflow:
 
         mock_validator = Mock()
         mock_validator.validate_fixes.return_value = ValidationResult(
-            passed=True, errors_fixed=1, errors_remaining=0, new_errors_introduced=0, summary="Success"
+            passed=True,
+            errors_fixed=1,
+            errors_remaining=0,
+            new_errors_introduced=0,
+            summary="Success",
         )
 
         mock_repo = Mock()
@@ -1000,7 +1014,9 @@ class TestFixApplierFullWorkflow:
         assert source_file.read_text() == "# Fixed\n"
 
     @pytest.mark.unit
-    def test_full_workflow_rollback_path(self, mock_sandbox_manager, tmp_path, sample_quality_error):
+    def test_full_workflow_rollback_path(
+        self, mock_sandbox_manager, tmp_path, sample_quality_error
+    ):
         """Test complete workflow: backup -> apply -> validate FAIL -> rollback."""
         # Setup
         project_root = tmp_path / "project"
@@ -1373,4 +1389,3 @@ class TestApplyResultModel:
         assert len(result.files_applied) == 1
         assert len(result.files_failed) == 1
         assert "Failed to apply" in result.error_message
-
