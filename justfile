@@ -26,6 +26,8 @@ lint-fix:
 type-check:
     uv run mypy src/
 
+quality: lint type-check
+
 # Run all quality checks
 check: lint type-check test
 

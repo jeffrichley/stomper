@@ -100,7 +100,7 @@ def main():
     print(f"  - Lines: {len(prompt.split(chr(10)))}")
     print(f"  - Words: {len(prompt.split())}")
 
-    with open("prompt.md", "w") as f:
+    with open("prompt.md", "w", encoding="utf-8") as f:
         f.write(prompt)
 
 

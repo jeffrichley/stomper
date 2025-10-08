@@ -99,9 +99,11 @@ OUTPUT: A clear list of which issues go to Step 2 (auto-fix) vs Step 3 (manual).
 ### Step 2: Apply Auto-Fixes
 
 <fixing_rules>
-{% for e in errors if e.auto_fixable %}
-- {{ e.file }}:{{ e.line }} — {{ e.code }} — {{ e.message }}
-{% endfor %}
+{%- for group in error_context.error_groups -%}
+{%- for e in group.errors if e.auto_fixable %}
+- {{ e.file }}:{{ e.line }} — {{ e.code }} — {{ e.message }} (auto-fixable: {{ e.auto_fixable }})
+{% endfor -%}
+{%- endfor -%}
 </fixing_rules>
 
 <instructions>
@@ -117,9 +119,11 @@ ENSURE: Code compiles after changes.
 ### Step 3: Resolve Manual Fixes
 
 <fixing_rules>
-{% for e in errors if not e.auto_fixable %}
-- {{ e.file }}:{{ e.line }} — {{ e.code }} — {{ e.message }}
-{% endfor %}
+{%- for group in error_context.error_groups -%}
+{%- for e in group.errors if not e.auto_fixable %}
+- {{ e.file }}:{{ e.line }} — {{ e.code }} — {{ e.message }} (auto-fixable: {{ e.auto_fixable }})
+{% endfor -%}
+{%- endfor -%}
 </fixing_rules>
 
 <instructions>

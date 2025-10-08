@@ -11,3 +11,13 @@ wheels/
 
 # Environment variables
 .env
+
+# IDE-specific files
+.cursor/
+.vscode.local.backup/
+
+# Windows zone identifiers
+*:Zone.Identifier
+
+# Backup files
+*- Copy.*

@@ -23,13 +23,13 @@ These are the tasks to be completed for the spec detailed in @.agent-os/specs/20
   - [x] 2.5 Add error handling for cursor-cli failures
   - [x] 2.6 Verify all tests pass
 
-- [ ] 3. Error-to-Prompt Generation System
-  - [ ] 3.1 Write tests for PromptGenerator class
-  - [ ] 3.2 Implement error context extraction
-  - [ ] 3.3 Implement prompt template generation
-  - [ ] 3.4 Add code context inclusion in prompts
-  - [ ] 3.5 Add prompt size optimization
-  - [ ] 3.6 Verify all tests pass
+- [x] 3. Error-to-Prompt Generation System
+  - [x] 3.1 Write tests for PromptGenerator class
+  - [x] 3.2 Implement error context extraction
+  - [x] 3.3 Implement prompt template generation
+  - [x] 3.4 Add code context inclusion in prompts
+  - [x] 3.5 Add prompt size optimization
+  - [x] 3.6 Verify all tests pass
 
 - [ ] 4. Fix Application and Validation Pipeline
   - [ ] 4.1 Write tests for FixApplier class
