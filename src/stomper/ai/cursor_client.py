@@ -321,6 +321,9 @@ class CursorClient(BaseAIAgent):
 
         start = time.monotonic()
         try:
+            # Use select on Unix, polling on Windows
+            use_select = not _is_windows()
+            
             while True:
                 # Stop if timeout exceeded
                 if time.monotonic() - start > timeout:
@@ -330,29 +333,75 @@ class CursorClient(BaseAIAgent):
                 if proc.poll() is not None:
                     break
 
-                ready, _, _ = select.select([proc.stdout, proc.stderr], [], [], 0.1)
+                if use_select:
+                    # Unix: use select for efficient I/O multiplexing
+                    ready, _, _ = select.select([proc.stdout, proc.stderr], [], [], 0.1)
+                    
+                    if proc.stdout and proc.stdout in ready:
+                        line = proc.stdout.readline()
+                        if line:
+                            stdout_lines.append(line)
+                            logger.debug(f"[STDOUT] {line.rstrip()}")
+                            try:
+                                event = json.loads(line.strip())
+                                events.append(event)
+                                logger.debug(f"[JSON] {event}")
+                                if event.get("type") == "result":
+                                    result = event
+                                    logger.info("✅ Process completed successfully!")
+                                    logger.info(f"Duration: {event.get('duration_ms', 0)}ms")
+                                    logger.info(f"Result: {event.get('result', 'No result')}")
+                                    break  # Logical completion
+                            except json.JSONDecodeError:
+                                pass  # Keep raw text too
 
-                if proc.stdout and proc.stdout in ready:
-                    line = proc.stdout.readline()
-                    if line:
+                    if proc.stderr and proc.stderr in ready:
+                        line = proc.stderr.readline()
+                        if line:
+                            stderr_lines.append(line)
+                            logger.debug(f"[STDERR] {line.rstrip()}")
+                else:
+                    # Windows: poll stdout/stderr directly
+                    # Check if there's data available by trying non-blocking readline
+                    if proc.stdout:
+                        line = proc.stdout.readline()
+                        if line:
+                            stdout_lines.append(line)
+                            logger.debug(f"[STDOUT] {line.rstrip()}")
+                            try:
+                                event = json.loads(line.strip())
+                                events.append(event)
+                                logger.debug(f"[JSON] {event}")
+                                if event.get("type") == "result":
+                                    result = event
+                                    logger.info("✅ Process completed successfully!")
+                                    logger.info(f"Duration: {event.get('duration_ms', 0)}ms")
+                                    logger.info(f"Result: {event.get('result', 'No result')}")
+                                    break  # Logical completion
+                            except json.JSONDecodeError:
+                                pass  # Keep raw text too
+                    
+                    if proc.stderr:
+                        line = proc.stderr.readline()
+                        if line:
+                            stderr_lines.append(line)
+                            logger.debug(f"[STDERR] {line.rstrip()}")
+                    
+                    # Small delay to avoid busy-waiting on Windows
+                    time.sleep(0.05)
+
+            # Read any remaining output
+            if proc.stdout:
+                remaining = proc.stdout.read()
+                if remaining:
+                    for line in remaining.splitlines(keepends=True):
                         stdout_lines.append(line)
                         logger.debug(f"[STDOUT] {line.rstrip()}")
-                        try:
-                            event = json.loads(line.strip())
-                            events.append(event)
-                            logger.debug(f"[JSON] {event}")
-                            if event.get("type") == "result":
-                                result = event
-                                logger.info("✅ Process completed successfully!")
-                                logger.info(f"Duration: {event.get('duration_ms', 0)}ms")
-                                logger.info(f"Result: {event.get('result', 'No result')}")
-                                break  # Logical completion
-                        except json.JSONDecodeError:
-                            pass  # Keep raw text too
-
-                if proc.stderr and proc.stderr in ready:
-                    line = proc.stderr.readline()
-                    if line:
+            
+            if proc.stderr:
+                remaining = proc.stderr.read()
+                if remaining:
+                    for line in remaining.splitlines(keepends=True):
                         stderr_lines.append(line)
                         logger.debug(f"[STDERR] {line.rstrip()}")
 
@@ -374,8 +423,7 @@ class CursorClient(BaseAIAgent):
             "stderr": stderr_lines,
             "events": events,
             "result": result,
-            # "returncode": proc.returncode,
-            "returncode": 0,
+            "returncode": proc.returncode if proc.returncode is not None else 0,
         }
 
     def get_cursor_cli_version(self) -> str:
