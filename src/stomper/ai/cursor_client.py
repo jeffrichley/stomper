@@ -8,6 +8,7 @@ import select
 import shlex
 import subprocess
 import time
+import uuid
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -183,8 +184,11 @@ class CursorClient(BaseAIAgent):
         # Construct comprehensive prompt with error context
         full_prompt = self._construct_prompt(error_context, code_context, prompt)
 
+        # Create a unique session ID for this fix
+        session_id = f"cursor-fix-{uuid.uuid4().hex[:8]}"
+        
         # Create a temporary sandbox for this fix
-        sandbox_path, branch_name = self.sandbox_manager.create_sandbox()
+        sandbox_path = self.sandbox_manager.create_sandbox(session_id)
 
         try:
             # Run cursor-cli in the sandbox directory
@@ -217,8 +221,8 @@ class CursorClient(BaseAIAgent):
             return code_context
 
         finally:
-            # Cleanup sandbox
-            self.sandbox_manager.cleanup_sandbox(sandbox_path, branch_name)
+            # Cleanup sandbox using session_id
+            self.sandbox_manager.cleanup_sandbox(session_id)
 
     def _construct_prompt(
         self, error_context: dict[str, Any], code_context: str, prompt: str
