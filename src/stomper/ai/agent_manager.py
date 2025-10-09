@@ -1,6 +1,7 @@
 """Agent manager for AI agent selection and fallback strategies."""
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from .base import AIAgent
@@ -11,11 +12,36 @@ logger = logging.getLogger(__name__)
 class AgentManager:
     """Manager for AI agent selection, fallback, and coordination."""
 
-    def __init__(self):
-        """Initialize agent manager."""
+    def __init__(
+        self,
+        project_root: Path | None = None,
+        mapper: Any | None = None,
+    ):
+        """Initialize agent manager.
+
+        Args:
+            project_root: Main project root (for mapper initialization)
+            mapper: Error mapper instance (optional, created if not provided)
+        """
         self._agents: dict[str, AIAgent] = {}
         self._fallback_order: list[str] = []
         self._default_agent: str | None = None
+
+        # Create mapper if not provided (requires project_root)
+        if mapper is None:
+            if project_root is not None:
+                # Import here to avoid circular dependency
+                from stomper.ai.mapper import ErrorMapper
+
+                self.mapper = ErrorMapper(project_root=project_root)
+                logger.info("AgentManager initialized with adaptive learning")
+            else:
+                # No mapper - backwards compatibility mode
+                self.mapper = None
+                logger.debug("AgentManager initialized without adaptive learning")
+        else:
+            self.mapper = mapper
+            logger.info("AgentManager initialized with provided mapper")
 
     def register_agent(self, name: str, agent: AIAgent) -> None:
         """Register an AI agent.
@@ -263,6 +289,105 @@ class AgentManager:
             }
 
         return stats
+
+    def generate_fix_with_intelligent_fallback(
+        self,
+        primary_agent_name: str,
+        error: Any,
+        error_context: dict[str, Any],
+        code_context: str,
+        prompt: str,
+        max_retries: int = 3,
+    ) -> str:
+        """Generate fix with intelligent fallback based on error history.
+
+        Args:
+            primary_agent_name: Name of primary agent to try
+            error: Quality error being fixed
+            error_context: Error context
+            code_context: Code context
+            prompt: Fix prompt
+            max_retries: Maximum retry attempts
+
+        Returns:
+            Generated fix from successful attempt
+
+        Raises:
+            RuntimeError: If all retries exhausted
+        """
+        # Fallback to simple mode if no mapper
+        if not self.mapper:
+            logger.warning("No mapper available, using simple fallback")
+            return self.generate_fix_with_fallback(
+                primary_agent_name,
+                error_context,
+                code_context,
+                prompt,
+            )
+
+        # Import here to avoid circular dependency
+        from stomper.ai.models import FixOutcome
+
+        failed_strategies = []
+
+        for retry_count in range(max_retries):
+            # Get adaptive strategy from mapper
+            adaptive_strategy = self.mapper.get_adaptive_strategy(
+                error,
+                retry_count=retry_count,
+            )
+
+            # Try to get fallback strategy if we've failed
+            if retry_count > 0:
+                fallback_strategy = self.mapper.get_fallback_strategy(
+                    error,
+                    failed_strategies,
+                )
+
+                if fallback_strategy is None:
+                    logger.warning("All fallback strategies exhausted")
+                    break
+
+                logger.info(f"🔄 Retry #{retry_count}: Using fallback strategy {fallback_strategy.value}")
+
+            # Try to generate fix
+            try:
+                if primary_agent_name not in self._agents:
+                    raise ValueError(f"Agent '{primary_agent_name}' not found")
+
+                agent = self._agents[primary_agent_name]
+                logger.info(
+                    f"🤖 Attempting fix with {primary_agent_name} "
+                    f"(strategy: {adaptive_strategy.verbosity.value}, retry: {retry_count})"
+                )
+
+                result = agent.generate_fix(error_context, code_context, prompt)
+
+                # ✅ Record success
+                self.mapper.record_attempt(
+                    error,
+                    FixOutcome.SUCCESS,
+                    adaptive_strategy.verbosity,
+                )
+
+                logger.info(f"✅ Fix successful with {adaptive_strategy.verbosity.value} strategy!")
+
+                return result
+
+            except Exception as e:
+                logger.warning(f"❌ Attempt {retry_count + 1} failed with {primary_agent_name}: {e}")
+
+                # Record failure
+                self.mapper.record_attempt(
+                    error,
+                    FixOutcome.FAILURE,
+                    adaptive_strategy.verbosity,
+                )
+
+                failed_strategies.append(adaptive_strategy.verbosity)
+
+        # All retries exhausted
+        raise RuntimeError(f"All {max_retries} retry attempts failed for {error.code}")
 
     def clear_all_agents(self) -> None:
         """Clear all registered agents."""

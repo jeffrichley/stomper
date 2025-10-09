@@ -18,6 +18,7 @@ dependencies = [
     "gitpython>=3.1.40",
     "dotenv>=0.9.9",
     "jinja2>=3.1.6",
+    "grandalf>=0.8",
 ]
 
 [project.scripts]
@@ -28,6 +29,7 @@ stomp = "stomper.cli:app"
 dev = [
     "mypy>=1.18.2",
     "pytest>=8.4.2",
+    "pytest-asyncio>=0.24.0",
     "pytest-cov>=7.0.0",
     "ruff>=0.13.2",
 ]
@@ -41,6 +43,9 @@ markers = [
     "e2e: End-to-end tests for full workflows", 
     "integration: Integration tests for component interactions",
 ]
+# Asyncio configuration
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.stomper]
 # Quality tools to run

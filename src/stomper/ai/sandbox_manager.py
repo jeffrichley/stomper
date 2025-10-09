@@ -22,40 +22,51 @@ class SandboxManager:
         """
         self.project_root = Path(project_root).resolve()
         self.repo = Repo(self.project_root)
-        self.sandbox_base = Path(tempfile.gettempdir()) / "stomper"
+        self.sandbox_base = self.project_root / ".stomper" / "sandboxes"
         self.sandbox_base.mkdir(parents=True, exist_ok=True)
+        # Track session_id to path/branch mappings
+        self._session_map: dict[str, tuple[Path, str]] = {}
 
-    def create_sandbox(self, base_branch: str = "HEAD") -> tuple[Path, str]:
+    def create_sandbox(self, session_id: str, base_branch: str = "HEAD") -> Path:
         """Create a new git worktree sandbox.
 
         Args:
+            session_id: Unique session identifier
             base_branch: Branch to base sandbox on (default: HEAD)
 
         Returns:
-            Tuple of (sandbox_path, branch_name)
+            Path to sandbox directory
         """
-        sandbox_id = f"sbx_{uuid.uuid4().hex[:8]}"
-        branch_name = f"sbx/{sandbox_id}"
-        sandbox_path = self.sandbox_base / sandbox_id
+        branch_name = f"sbx/{session_id}"
+        sandbox_path = self.sandbox_base / session_id
 
         try:
             # Create worktree with new branch
             self.repo.git.worktree("add", str(sandbox_path), "-b", branch_name, base_branch)
 
+            # Store mapping
+            self._session_map[session_id] = (sandbox_path, branch_name)
+
             logger.info(f"Created sandbox: {sandbox_path} (branch: {branch_name})")
-            return sandbox_path, branch_name
+            return sandbox_path
 
         except GitCommandError as e:
             logger.error(f"Failed to create sandbox: {e}")
             raise RuntimeError(f"Failed to create git worktree: {e}")
 
-    def cleanup_sandbox(self, sandbox_path: Path, branch_name: str) -> None:
+    def cleanup_sandbox(self, session_id: str) -> None:
         """Clean up sandbox worktree and branch.
 
         Args:
-            sandbox_path: Path to sandbox directory
-            branch_name: Name of the sandbox branch
+            session_id: Session identifier
         """
+        # Get sandbox info from mapping
+        if session_id not in self._session_map:
+            sandbox_path = self.sandbox_base / session_id
+            branch_name = f"sbx/{session_id}"
+        else:
+            sandbox_path, branch_name = self._session_map[session_id]
+
         try:
             # Remove worktree
             self.repo.git.worktree("remove", str(sandbox_path), "--force")
@@ -71,6 +82,10 @@ class SandboxManager:
 
         except GitCommandError as e:
             logger.warning(f"Failed to delete branch {branch_name}: {e}")
+
+        # Remove from mapping
+        if session_id in self._session_map:
+            del self._session_map[session_id]
 
     def get_sandbox_diff(self, sandbox_path: Path, base_branch: str = "HEAD") -> str:
         """Get diff between sandbox and base branch.

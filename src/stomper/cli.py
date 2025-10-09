@@ -27,6 +27,159 @@ app = typer.Typer(
 console = Console()
 
 
+@app.command()
+def stats(
+    project_root: Path = typer.Option(
+        Path.cwd(),
+        "--project-root",
+        "-p",
+        help="Project root directory",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed statistics for all error patterns",
+    ),
+):
+    """Display error mapping and learning statistics.
+
+    Shows how well Stomper is learning to fix different error types,
+    which errors are difficult, and which strategies work best.
+    """
+    try:
+        from stomper.ai.mapper import ErrorMapper
+
+        # Load mapper
+        mapper = ErrorMapper(project_root=project_root)
+
+        # Get statistics
+        stats_data = mapper.get_statistics()
+
+        console.print()
+
+        # Display header
+        header_panel = Panel(
+            Align.center(Text("Stomper Learning Statistics", style="bold blue")),
+            box=box.DOUBLE,
+            border_style="blue",
+            padding=(1, 2),
+        )
+        console.print(header_panel)
+        console.print()
+
+        # Overall stats
+        overall_table = Table(title="Overall Performance", box=box.ROUNDED)
+        overall_table.add_column("Metric", style="cyan", no_wrap=True)
+        overall_table.add_column("Value", style="white")
+
+        overall_rate = stats_data["overall_success_rate"]
+        rate_color = "green" if overall_rate >= 70 else "yellow" if overall_rate >= 50 else "red"
+
+        overall_table.add_row(
+            "Overall Success Rate", f"[{rate_color}]{overall_rate:.1f}%[/{rate_color}]"
+        )
+        overall_table.add_row("Total Attempts", f"{stats_data['total_attempts']:,}")
+        overall_table.add_row("Total Successes", f"{stats_data['total_successes']:,}")
+        overall_table.add_row("Error Patterns Learned", str(stats_data["total_patterns"]))
+        overall_table.add_row(
+            "Last Updated", stats_data["last_updated"][:19] if stats_data["last_updated"] else "Never"
+        )
+
+        console.print(overall_table)
+        console.print()
+
+        # Difficult errors
+        if stats_data["difficult_errors"]:
+            difficult_table = Table(title="Needs Improvement", box=box.ROUNDED)
+            difficult_table.add_column("Error", style="red", no_wrap=True)
+            difficult_table.add_column("Tool", style="yellow")
+            difficult_table.add_column("Success Rate", style="red", justify="right")
+            difficult_table.add_column("Attempts", style="white", justify="right")
+
+            for error in stats_data["difficult_errors"][:5]:  # Top 5
+                difficult_table.add_row(
+                    error["code"],
+                    error["tool"],
+                    f"{error['success_rate']:.1f}%",
+                    str(error["attempts"]),
+                )
+
+            console.print(difficult_table)
+            console.print()
+
+            # Helpful tip
+            console.print(
+                "[dim italic]Tip: Difficult errors might benefit from better examples "
+                "in the errors/ directory.[/dim italic]"
+            )
+            console.print()
+
+        # Easy errors
+        if stats_data["easy_errors"]:
+            easy_table = Table(title="Mastered Errors", box=box.ROUNDED)
+            easy_table.add_column("Error", style="green", no_wrap=True)
+            easy_table.add_column("Tool", style="yellow")
+            easy_table.add_column("Success Rate", style="green", justify="right")
+            easy_table.add_column("Attempts", style="white", justify="right")
+
+            for error in stats_data["easy_errors"][:5]:  # Top 5
+                easy_table.add_row(
+                    error["code"],
+                    error["tool"],
+                    f"{error['success_rate']:.1f}%",
+                    str(error["attempts"]),
+                )
+
+            console.print(easy_table)
+            console.print()
+
+        # Verbose mode - show all patterns
+        if verbose and mapper.data.patterns:
+            all_table = Table(title="All Error Patterns", box=box.ROUNDED)
+            all_table.add_column("Error", style="cyan")
+            all_table.add_column("Tool", style="yellow")
+            all_table.add_column("Success Rate", justify="right")
+            all_table.add_column("Attempts", justify="right")
+            all_table.add_column("Successes", style="green", justify="right")
+            all_table.add_column("Failures", style="red", justify="right")
+
+            for pattern_key, pattern in sorted(mapper.data.patterns.items()):
+                rate_color = (
+                    "green" if pattern.success_rate >= 70 else "yellow" if pattern.success_rate >= 50 else "red"
+                )
+                all_table.add_row(
+                    pattern.error_code,
+                    pattern.tool,
+                    f"[{rate_color}]{pattern.success_rate:.1f}%[/{rate_color}]",
+                    str(pattern.total_attempts),
+                    str(pattern.successes),
+                    str(pattern.failures),
+                )
+
+            console.print(all_table)
+            console.print()
+
+        # Storage location
+        console.print(f"[dim]Data stored in: {mapper.storage_path}[/dim]")
+        console.print()
+
+        # No data message
+        if stats_data["total_attempts"] == 0:
+            console.print(
+                Panel(
+                    Align.center(Text("No learning data yet!\n\nRun 'stomper fix' to start learning.", style="yellow")),
+                    box=box.ROUNDED,
+                    border_style="yellow",
+                )
+            )
+            console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error loading statistics: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
 def print_header() -> None:
     """Print a beautiful header for Stomper."""
     header_text = Text("Stomper", style="bold blue")

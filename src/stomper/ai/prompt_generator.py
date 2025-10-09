@@ -14,25 +14,55 @@ logger = logging.getLogger(__name__)
 class PromptGenerator:
     """Generates prompts for AI agents based on quality errors and code context."""
 
-    def __init__(self, template_dir: str = "templates", errors_dir: str = "errors"):
+    def __init__(
+        self,
+        template_dir: str = "templates",
+        errors_dir: str = "errors",
+        project_root: Path | None = None,
+        mapper: Any | None = None,
+    ):
         """Initialize the PromptGenerator.
 
         Args:
             template_dir: Directory containing Jinja2 templates
             errors_dir: Directory containing error mapping files
+            project_root: Main project root (for mapper initialization)
+            mapper: Error mapper for adaptive strategies (optional)
         """
         self.template_dir = Path(template_dir)
         self.errors_dir = Path(errors_dir)
 
+        # Create mapper if not provided (requires project_root)
+        if mapper is None:
+            if project_root is not None:
+                # Import here to avoid circular dependency
+                from stomper.ai.mapper import ErrorMapper
+
+                self.mapper = ErrorMapper(project_root=project_root)
+                logger.info("PromptGenerator initialized with adaptive learning")
+            else:
+                # No mapper - backwards compatibility mode
+                self.mapper = None
+                logger.debug("PromptGenerator initialized without adaptive learning")
+        else:
+            self.mapper = mapper
+            logger.info("PromptGenerator initialized with provided mapper")
+
         # Initialize Jinja2 environment
         self.env = Environment(loader=FileSystemLoader(template_dir))
 
-    def generate_prompt(self, errors: list[QualityError], code_context: str) -> str:
+    def generate_prompt(
+        self,
+        errors: list[QualityError],
+        code_context: str,
+        retry_count: int = 0,
+    ) -> str:
         """Generate a prompt for AI agents based on errors and code context.
 
         Args:
             errors: List of quality errors to fix
             code_context: Surrounding code context
+            retry_count: Number of retry attempts (for adaptive strategies)
 
         Returns:
             Generated prompt string
@@ -44,14 +74,37 @@ class PromptGenerator:
             logger.warning("No errors provided to PromptGenerator")
             return self._generate_empty_prompt()
 
+        # Get adaptive strategy for primary error (if mapper available)
+        adaptive_strategy = None
+        if self.mapper:
+            primary_error = errors[0]
+            adaptive_strategy = self.mapper.get_adaptive_strategy(
+                primary_error,
+                retry_count=retry_count,
+            )
+            logger.debug(
+                f"Using {adaptive_strategy.verbosity.value} strategy for {primary_error.code} "
+                f"(retry #{retry_count})"
+            )
+
         # Extract error context
         error_context = self._extract_error_context(errors)
 
-        # Load error-specific advice
-        error_advice = self._load_error_advice(errors)
+        # Load error-specific advice (enhanced with adaptive strategy)
+        error_advice = self._load_error_advice(errors, adaptive_strategy)
 
-        # Process code context
-        processed_code_context = self._process_code_context(code_context)
+        # Process code context (adapt based on strategy)
+        processed_code_context = self._process_code_context(code_context, adaptive_strategy)
+
+        # Add adaptive strategy to context (for template)
+        if adaptive_strategy:
+            error_context["adaptive_strategy"] = {
+                "verbosity": adaptive_strategy.verbosity.value,
+                "retry_count": adaptive_strategy.retry_count,
+                "include_examples": adaptive_strategy.include_examples,
+                "include_history": adaptive_strategy.include_history,
+                "suggested_approach": adaptive_strategy.suggested_approach,
+            }
 
         # Generate prompt using template
         try:
@@ -60,6 +113,7 @@ class PromptGenerator:
                 error_context=error_context,
                 error_advice=error_advice,
                 code_context=processed_code_context,
+                adaptive_strategy=adaptive_strategy,
             )
 
             # Return the full prompt without any optimization
@@ -118,11 +172,16 @@ class PromptGenerator:
             "validation_status": "complete",
         }
 
-    def _load_error_advice(self, errors: list[QualityError]) -> dict[str, str]:
+    def _load_error_advice(
+        self,
+        errors: list[QualityError],
+        adaptive_strategy: Any | None = None,
+    ) -> dict[str, str]:
         """Load error-specific advice from mapping files.
 
         Args:
             errors: List of quality errors
+            adaptive_strategy: Adaptive strategy for this fix (optional)
 
         Returns:
             Dictionary mapping error codes to advice
@@ -137,7 +196,19 @@ class PromptGenerator:
             advice_file = self._get_advice_file_path(tool, error_code)
             if advice_file and advice_file.exists():
                 try:
-                    advice[error_code] = advice_file.read_text(encoding="utf-8")
+                    base_advice = advice_file.read_text(encoding="utf-8")
+
+                    # Enhance advice with adaptive strategy suggestions
+                    if adaptive_strategy and adaptive_strategy.suggested_approach:
+                        enhanced_advice = (
+                            f"{base_advice}\n\n"
+                            f"**💡 Recommended Approach (based on history):**\n"
+                            f"{adaptive_strategy.suggested_approach}"
+                        )
+                        advice[error_code] = enhanced_advice
+                    else:
+                        advice[error_code] = base_advice
+
                 except Exception as e:
                     logger.warning(f"Failed to read advice file {advice_file}: {e}")
                     advice[error_code] = f"Fix {error_code}: {error.message}"
@@ -147,11 +218,16 @@ class PromptGenerator:
 
         return advice
 
-    def _process_code_context(self, code_context: str) -> str:
+    def _process_code_context(
+        self,
+        code_context: str,
+        adaptive_strategy: Any | None = None,
+    ) -> str:
         """Process code context for inclusion in prompts.
 
         Args:
             code_context: Raw code context
+            adaptive_strategy: Strategy for this fix (optional)
 
         Returns:
             Processed code context
@@ -159,7 +235,10 @@ class PromptGenerator:
         if not code_context or not code_context.strip():
             return "No code context available"
 
-        # Return full code context without truncation
+        # For detailed/verbose strategies, include more context
+        # For minimal strategy, could provide less context
+        # (Currently just returns full context, but hook is here for future)
+
         return code_context
 
     def _generate_empty_prompt(self) -> str:
