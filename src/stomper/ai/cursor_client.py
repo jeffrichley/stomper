@@ -226,8 +226,10 @@ cursor-agent -p --force "$(cat {prompt_file.name})"
             logger.debug(f"Running cursor-cli via wrapper script: {wrapper_script.name}")
             logger.debug(f"Prompt length: {len(full_prompt)} characters")
 
-            # Use our streaming method - pass sandbox as cwd but command doesn't use it
-            result = self.run_cursor_agent_streaming(cmd, str(sandbox_path), timeout=self.timeout)
+            # Run the wrapper script directly WITHOUT using _prepare_command
+            # The wrapper script already handles everything (PATH, cd, cursor-agent)
+            # Using _prepare_command would double-wrap with WSL which breaks
+            result = self._run_wrapper_script(cmd, str(sandbox_path), timeout=self.timeout)
 
             if result["returncode"] != 0:
                 stderr_text = "".join(result["stderr"])
@@ -323,6 +325,27 @@ cursor-agent -p --force "$(cat {prompt_file.name})"
         stripped = response.strip()
         return not (stripped.startswith("#") and "\n" not in stripped)
 
+    def _run_wrapper_script(
+        self, cmd: list[str], cwd: str, timeout: int = 30
+    ) -> dict[str, Any]:
+        """Run wrapper script directly without _prepare_command wrapping.
+        
+        This is used for wrapper scripts that already handle WSL, PATH, etc.
+        Using _prepare_command would cause double-wrapping issues.
+        
+        Args:
+            cmd: The command to execute (already WSL-wrapped if needed)
+            cwd: Working directory
+            timeout: Max runtime in seconds
+            
+        Returns:
+            A dict with stdout, stderr, parsed events, and final result.
+        """
+        logger.debug(f"Executing wrapper: {' '.join(cmd)}")
+        logger.debug(f"Working directory: {cwd}")
+        
+        return self._execute_streaming(cmd, cwd, timeout)
+    
     def run_cursor_agent_streaming(
         self, cmd: list[str], cwd: str, timeout: int = 30
     ) -> dict[str, Any]:
@@ -342,9 +365,24 @@ cursor-agent -p --force "$(cat {prompt_file.name})"
         logger.debug(f"Executing command: {' '.join(prepared_cmd)}")
         logger.debug(f"Working directory: {prepared_cwd}")
         
+        return self._execute_streaming(prepared_cmd, prepared_cwd, timeout)
+    
+    def _execute_streaming(
+        self, cmd: list[str], cwd: str, timeout: int = 30
+    ) -> dict[str, Any]:
+        """Execute command with streaming output and JSON parsing.
+        
+        Args:
+            cmd: The command to execute (fully prepared)
+            cwd: Working directory
+            timeout: Max runtime in seconds
+            
+        Returns:
+            A dict with stdout, stderr, parsed events, and final result.
+        """
         proc = subprocess.Popen(
-            prepared_cmd,
-            cwd=prepared_cwd,
+            cmd,
+            cwd=cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
