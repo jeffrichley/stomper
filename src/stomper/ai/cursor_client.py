@@ -205,14 +205,18 @@ class CursorClient(BaseAIAgent):
             # Create wrapper script that sources profile and runs cursor-agent
             # This avoids complex escaping issues with bash -c
             wrapper_script = sandbox_path / f".cursor-run-{session_id}.sh"
+            
+            # Use explicit path to cursor-agent since we know where it is
+            # Sourcing profile doesn't work reliably in non-interactive scripts
             wrapper_content = f"""#!/bin/bash
-# Load login shell environment to get PATH
-source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
+# Explicit PATH including common npm global locations
+export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 
 # Run cursor-agent with prompt from file
-cursor-agent -p --force "$(cat {prompt_file.name})"
+"$HOME/.local/bin/cursor-agent" -p --force "$(cat {prompt_file.name})"
 """
-            wrapper_script.write_text(wrapper_content, encoding="utf-8")
+            # Write with Unix line endings (LF only, not CRLF)
+            wrapper_script.write_text(wrapper_content, encoding="utf-8", newline="\n")
             wrapper_script.chmod(0o755)
             
             # Convert wrapper script path to WSL format if on Windows
