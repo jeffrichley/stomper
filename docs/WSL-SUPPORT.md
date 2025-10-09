@@ -63,7 +63,16 @@ def _prepare_command(self, cmd: list[str], cwd: str) -> tuple[list[str], str]:
     """Prepare command for execution, wrapping with WSL if needed."""
     if self.use_wsl:
         wsl_cwd = _windows_path_to_wsl(cwd)
-        wsl_cmd = ["wsl", "--cd", wsl_cwd, "--"] + cmd
+        
+        # Build shell command with proper escaping
+        # Use login shell (-l) to load PATH from profile (~/.bashrc, ~/.profile)
+        # This ensures cursor-agent is found in ~/.local/bin or npm global paths
+        escaped_cmd = " ".join(shlex.quote(arg) for arg in cmd)
+        shell_cmd = f"cd {shlex.quote(wsl_cwd)} && {escaped_cmd}"
+        
+        # Wrap with WSL using bash login shell
+        wsl_cmd = ["wsl", "bash", "-l", "-c", shell_cmd]
+        
         return wsl_cmd, cwd
     else:
         return cmd, cwd
@@ -115,11 +124,34 @@ cursor_client = CursorClient(sandbox_manager=sandbox_manager)
 
 **On Windows:**
 - Verify WSL is installed: `wsl --status`
-- Verify cursor-agent is installed in WSL: `wsl -- cursor-agent --version`
+- Verify cursor-agent is installed in WSL: `wsl bash -l -c "cursor-agent -v"`
+- **Note**: Use `bash -l` (login shell) to load your PATH properly
 
 **On WSL/Linux:**
-- Verify cursor-agent is installed: `cursor-agent --version`
+- Verify cursor-agent is installed: `cursor-agent -v`
 - Check PATH: `which cursor-agent`
+
+### PATH Issues in WSL
+
+**Problem**: cursor-agent works in interactive WSL but not via `wsl -- cursor-agent`
+
+**Cause**: Non-interactive WSL shells don't load `~/.bashrc` or `~/.profile`, so tools installed in `~/.local/bin` or npm global paths aren't found.
+
+**Solution**: Stomper uses `bash -l` (login shell) which loads your profile and PATH:
+```bash
+# ❌ Doesn't work (non-interactive, no PATH)
+wsl -- cursor-agent -v
+
+# ✅ Works (login shell loads PATH)
+wsl bash -l -c "cursor-agent -v"
+```
+
+If cursor-agent is installed but still not found:
+1. Check installation location: `wsl bash -l -c "which cursor-agent"`
+2. Ensure it's in a standard location like:
+   - `~/.local/bin/cursor-agent`
+   - `/usr/local/bin/cursor-agent`
+   - npm global bin (check with `npm bin -g`)
 
 ### Path Conversion Issues
 

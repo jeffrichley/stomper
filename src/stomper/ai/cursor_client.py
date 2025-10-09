@@ -5,6 +5,7 @@ import logging
 import os
 import platform
 import select
+import shlex
 import subprocess
 import time
 from pathlib import Path, PureWindowsPath
@@ -153,10 +154,16 @@ class CursorClient(BaseAIAgent):
             # Convert Windows path to WSL path
             wsl_cwd = _windows_path_to_wsl(cwd)
             
-            # Wrap command with wsl
-            wsl_cmd = ["wsl", "--cd", wsl_cwd, "--"] + cmd
+            # Build shell command string with proper escaping
+            # Use login shell (-l) to load PATH from profile (~/.bashrc, ~/.profile)
+            # This ensures cursor-agent is found in ~/.local/bin or npm global paths
+            escaped_cmd = " ".join(shlex.quote(arg) for arg in cmd)
+            shell_cmd = f"cd {shlex.quote(wsl_cwd)} && {escaped_cmd}"
             
-            # Use Windows path as cwd for subprocess (wsl handles the cd)
+            # Wrap with WSL using bash login shell
+            wsl_cmd = ["wsl", "bash", "-l", "-c", shell_cmd]
+            
+            # Use Windows path as cwd for subprocess
             return wsl_cmd, cwd
         else:
             # No transformation needed
@@ -374,7 +381,7 @@ class CursorClient(BaseAIAgent):
             cursor-cli version string
         """
         try:
-            cmd = ["cursor-agent", "--version"]
+            cmd = ["cursor-agent", "-v"]
             # For version check, use current directory
             prepared_cmd, prepared_cwd = self._prepare_command(cmd, str(Path.cwd()))
             
@@ -399,7 +406,7 @@ class CursorClient(BaseAIAgent):
             True if cursor-cli is available, False otherwise
         """
         try:
-            cmd = ["cursor-agent", "--version"]
+            cmd = ["cursor-agent", "-v"]
             # For availability check, use current directory
             prepared_cmd, prepared_cwd = self._prepare_command(cmd, str(Path.cwd()))
             
