@@ -349,7 +349,7 @@ class StomperWorkflow:
                     # 2a. Generate prompt
                     logger.info(f"📝 Generating prompt for {current_file.file_path} (attempt {attempt + 1})")
                     file_path = working_dir / current_file.file_path
-                    code_context = file_path.read_text()
+                    code_context = file_path.read_text(encoding="utf-8")
 
                     from stomper.quality.base import QualityError
                     quality_errors = [
@@ -389,7 +389,7 @@ class StomperWorkflow:
                     )
 
                     # Apply fix
-                    file_path.write_text(fixed_code)
+                    file_path.write_text(fixed_code, encoding="utf-8")
 
                     # 2c. Verify fixes
                     logger.info(f"🔍 Verifying fixes for {current_file.file_path}")

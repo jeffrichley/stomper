@@ -24,3 +24,6 @@ htmlcov/
 
 # Backup files
 *- Copy.*
+
+# Stomper sandbox directories
+.stomper/

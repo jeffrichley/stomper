@@ -381,7 +381,7 @@ def fix(
         None, "--ignore", help="Error codes to ignore (comma-separated)"
     ),
     # Processing options
-    max_errors: int = typer.Option(100, "--max-errors", help="Maximum errors to fix per iteration"),
+    max_errors: int = typer.Option(9999999, "--max-errors", help="Maximum errors to fix per iteration"),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be fixed without making changes"
     ),
@@ -691,6 +691,7 @@ def fix(
             from stomper.ai.prompt_generator import PromptGenerator
             from stomper.ai.mapper import ErrorMapper
             from stomper.ai.sandbox_manager import SandboxManager
+            from stomper.ai.cursor_client import CursorClient
             
             # Initialize workflow components
             agent_manager = AgentManager(project_root)
@@ -704,15 +705,26 @@ def fix(
             # Create workflow orchestrator
             workflow = StomperWorkflow(
                 project_root=project_root,
-                quality_manager=quality_manager,
-                agent_manager=agent_manager,
-                prompt_generator=prompt_generator,
-                mapper=mapper,
-                sandbox_manager=sandbox_manager,
-                run_tests_enabled=run_tests,
                 use_sandbox=use_sandbox,
+                run_tests=run_tests,
                 max_parallel_files=max_parallel_files,
             )
+            
+            # Register AI agent based on config
+            if agent_name == "cursor-cli":
+                try:
+                    cursor_agent = CursorClient(
+                        sandbox_manager=sandbox_manager,
+                        timeout=60  # 60 seconds timeout for AI operations
+                    )
+                    workflow.register_agent("cursor-cli", cursor_agent)
+                    console.print(f":robot: Registered agent: {agent_name}")
+                except RuntimeError as e:
+                    console.print(f"[red]:cross_mark: Failed to initialize {agent_name}: {e}[/red]")
+                    raise typer.Exit(1)
+            else:
+                console.print(f"[red]:cross_mark: Unknown agent: {agent_name}[/red]")
+                raise typer.Exit(1)
             
             # Build workflow config
             workflow_config = {
