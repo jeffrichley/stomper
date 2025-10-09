@@ -7,6 +7,7 @@ import platform
 import select
 import shlex
 import subprocess
+import tempfile
 import time
 import uuid
 from pathlib import Path, PureWindowsPath
@@ -190,24 +191,48 @@ class CursorClient(BaseAIAgent):
         # Create a temporary sandbox for this fix
         sandbox_path = self.sandbox_manager.create_sandbox(session_id)
 
+        # Write prompt to file to avoid shell escaping issues
+        # Prompts often contain special characters (backticks, quotes, newlines)
+        # that break bash -c even with proper escaping
+        prompt_file = None
+        wrapper_script = None
+        
         try:
-            # Run cursor-cli in the sandbox directory
-            cmd = [
-                "cursor-agent",
-                "-p",  # Print output to stdout
-                "--force",  # Force allow commands
-                full_prompt,  # Comprehensive prompt
-            ]
+            # Create prompt file in sandbox
+            prompt_file = sandbox_path / f".cursor-prompt-{session_id}.txt"
+            prompt_file.write_text(full_prompt, encoding="utf-8")
+            
+            # Create wrapper script that sources profile and runs cursor-agent
+            # This avoids complex escaping issues with bash -c
+            wrapper_script = sandbox_path / f".cursor-run-{session_id}.sh"
+            wrapper_content = f"""#!/bin/bash
+# Load login shell environment to get PATH
+source ~/.bashrc 2>/dev/null || source ~/.profile 2>/dev/null || true
 
-            logger.debug(f"Running cursor-cli command in sandbox: {sandbox_path}")
+# Run cursor-agent with prompt from file
+cursor-agent -p --force "$(cat {prompt_file.name})"
+"""
+            wrapper_script.write_text(wrapper_content, encoding="utf-8")
+            wrapper_script.chmod(0o755)
+            
+            # Convert wrapper script path to WSL format if on Windows
+            if self.use_wsl:
+                wsl_sandbox = _windows_path_to_wsl(str(sandbox_path))
+                wsl_script = f"{wsl_sandbox}/{wrapper_script.name}"
+                cmd = ["wsl", "bash", wsl_script]
+            else:
+                cmd = [str(wrapper_script)]
+
+            logger.debug(f"Running cursor-cli via wrapper script: {wrapper_script.name}")
             logger.debug(f"Prompt length: {len(full_prompt)} characters")
 
-            # Use our streaming method
+            # Use our streaming method - pass sandbox as cwd but command doesn't use it
             result = self.run_cursor_agent_streaming(cmd, str(sandbox_path), timeout=self.timeout)
 
             if result["returncode"] != 0:
-                logger.error(f"cursor-cli failed: {result['stderr']}")
-                raise RuntimeError(f"cursor-cli execution failed: {result['stderr']}")
+                stderr_text = "".join(result["stderr"])
+                logger.error(f"cursor-cli failed: {stderr_text}")
+                raise RuntimeError(f"cursor-cli execution failed: {stderr_text}")
 
             # Log completion info
             if result["result"]:
@@ -221,6 +246,19 @@ class CursorClient(BaseAIAgent):
             return code_context
 
         finally:
+            # Cleanup temporary files
+            if prompt_file and prompt_file.exists():
+                try:
+                    prompt_file.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete prompt file: {e}")
+            
+            if wrapper_script and wrapper_script.exists():
+                try:
+                    wrapper_script.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete wrapper script: {e}")
+            
             # Cleanup sandbox using session_id
             self.sandbox_manager.cleanup_sandbox(session_id)
 
