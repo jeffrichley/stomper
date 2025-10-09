@@ -185,11 +185,22 @@ class CursorClient(BaseAIAgent):
         # Construct comprehensive prompt with error context
         full_prompt = self._construct_prompt(error_context, code_context, prompt)
 
+        # Get the file path from error context
+        file_path_str = error_context.get("file_path", "unknown.py")
+        file_path_relative = Path(file_path_str)
+        
         # Create a unique session ID for this fix
         session_id = f"cursor-fix-{uuid.uuid4().hex[:8]}"
         
         # Create a temporary sandbox for this fix
         sandbox_path = self.sandbox_manager.create_sandbox(session_id)
+        
+        # Write the file to sandbox so cursor-agent can modify it
+        target_file = sandbox_path / file_path_relative
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(code_context, encoding="utf-8")
+        
+        logger.debug(f"Wrote file to sandbox: {target_file}")
 
         # Write prompt to file to avoid shell escaping issues
         # Prompts often contain special characters (backticks, quotes, newlines)
@@ -212,8 +223,11 @@ class CursorClient(BaseAIAgent):
 # Explicit PATH including common npm global locations
 export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
 
+# Change to sandbox directory
+cd "$(dirname "$0")"
+
 # Run cursor-agent with prompt from file
-"$HOME/.local/bin/cursor-agent" -p --force "$(cat {prompt_file.name})"
+"$HOME/.local/bin/cursor-agent" -p --force "Fix the file {file_path_relative}. $(cat {prompt_file.name})"
 """
             # Write with Unix line endings (LF only, not CRLF)
             wrapper_script.write_text(wrapper_content, encoding="utf-8", newline="\n")
@@ -235,21 +249,31 @@ export PATH="$HOME/.local/bin:/usr/local/bin:$PATH"
             # Using _prepare_command would double-wrap with WSL which breaks
             result = self._run_wrapper_script(cmd, str(sandbox_path), timeout=self.timeout)
 
+            # Check if cursor-agent succeeded
+            # Note: cursor-agent with -p flag outputs text, not JSON events
+            # So result["result"] will be None, but that's expected
             if result["returncode"] != 0:
                 stderr_text = "".join(result["stderr"])
                 logger.error(f"cursor-cli failed: {stderr_text}")
+                logger.error(f"stdout: {result['stdout']}")
                 raise RuntimeError(f"cursor-cli execution failed: {stderr_text}")
 
-            # Log completion info
-            if result["result"]:
-                logger.info("✅ Cursor-agent completed successfully!")
-                logger.info(f"Duration: {result['result'].get('duration_ms', 0)}ms")
-                logger.info(f"Events captured: {len(result['events'])}")
+            # Log stdout for debugging
+            if result["stdout"]:
+                stdout_text = "".join(result["stdout"])
+                logger.debug(f"Cursor-agent output: {stdout_text[:500]}")  # First 500 chars
 
-            # Get the fixed code from the sandbox
-            # For now, return the code context (in a real implementation, we'd read the fixed file)
-            # TODO: Read actual fixed file from sandbox
-            return code_context
+            logger.info("✅ Cursor-agent completed successfully!")
+
+            # Read the fixed file from sandbox
+            if target_file.exists():
+                fixed_code = target_file.read_text(encoding="utf-8")
+                logger.info(f"📖 Read fixed code from {target_file.name}")
+                return fixed_code
+            else:
+                logger.warning(f"⚠️ File {target_file} not found after cursor-agent ran")
+                logger.warning("Returning original code unchanged")
+                return code_context
 
         finally:
             # Cleanup temporary files
