@@ -37,7 +37,7 @@
         "--no-mypy",
         "--max-parallel-files", "1",
         "--use-sandbox",
-        "--no-run-tests"
+        "--run-tests"
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
