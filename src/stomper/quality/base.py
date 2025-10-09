@@ -102,6 +102,7 @@ class BaseQualityTool(ABC):
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',  # Force UTF-8 encoding (fixes Windows cp1252 issues)
                 cwd=project_root,
                 check=False,  # Don't raise exception on non-zero exit
             )
@@ -175,6 +176,7 @@ class BaseQualityTool(ABC):
                 cmd,
                 capture_output=True,
                 text=True,
+                encoding='utf-8',  # Force UTF-8 encoding (fixes Windows cp1252 issues)
                 cwd=project_root,
                 check=False,  # Don't raise exception on non-zero exit
             )

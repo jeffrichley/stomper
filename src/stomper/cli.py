@@ -647,10 +647,11 @@ def fix(
             )
 
             # Step 2: Apply Stomper's additional filtering (post-processing)
+            # Use the SAME include_patterns we determined earlier (respects CLI/context/config precedence)
             if all_errors:
                 all_errors = quality_manager.filter_results_with_stomper_patterns(
                     errors=all_errors,
-                    include_patterns=config_files.include,
+                    include_patterns=include_patterns,  # Use precedence-aware patterns!
                     exclude_patterns=exclude_patterns or [],
                     project_root=project_root,
                 )
