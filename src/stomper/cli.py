@@ -674,6 +674,87 @@ def fix(
         tool_summary = quality_manager.get_tool_summary(filtered_errors)
         print_quality_results(all_errors, filtered_errors, tool_summary, dry_run)
 
+        # If not dry run and errors found, invoke the workflow to fix them!
+        if not dry_run and filtered_errors:
+            console.print()
+            console.print(
+                Panel(
+                    ":robot: Starting AI-powered workflow to fix issues...",
+                    box=box.ROUNDED,
+                    border_style="blue"
+                )
+            )
+            
+            # Import workflow components
+            from stomper.workflow.orchestrator import StomperWorkflow
+            from stomper.ai.agent_manager import AgentManager
+            from stomper.ai.prompt_generator import PromptGenerator
+            from stomper.ai.mapper import ErrorMapper
+            from stomper.ai.sandbox_manager import SandboxManager
+            
+            # Initialize workflow components
+            agent_manager = AgentManager(project_root)
+            prompt_generator = PromptGenerator()
+            mapper = ErrorMapper(project_root)
+            
+            sandbox_manager = None
+            if use_sandbox:
+                sandbox_manager = SandboxManager(project_root)
+            
+            # Create workflow orchestrator
+            workflow = StomperWorkflow(
+                project_root=project_root,
+                quality_manager=quality_manager,
+                agent_manager=agent_manager,
+                prompt_generator=prompt_generator,
+                mapper=mapper,
+                sandbox_manager=sandbox_manager,
+                run_tests_enabled=run_tests,
+                use_sandbox=use_sandbox,
+                max_parallel_files=max_parallel_files,
+            )
+            
+            # Build workflow config
+            workflow_config = {
+                "project_root": project_root,
+                "enabled_tools": enabled_tools,
+                "processing_strategy": processing_strategy,
+                "max_errors_per_iteration": max_errors,
+                "test_validation": test_validation,
+                "continue_on_error": continue_on_error,
+            }
+            
+            # Run the workflow asynchronously
+            import asyncio
+            
+            try:
+                console.print(":gear: Initializing workflow orchestrator...")
+                result = asyncio.run(workflow.run(workflow_config))
+                
+                # Show final results
+                console.print()
+                console.print(
+                    Panel(
+                        f":white_check_mark: Workflow Complete!\n\n"
+                        f"Successfully fixed: {len(result.get('successful_fixes', []))} files\n"
+                        f"Failed: {len(result.get('failed_fixes', []))} files\n"
+                        f"Total errors fixed: {result.get('total_errors_fixed', 0)}",
+                        title=":party_popper: Results",
+                        box=box.ROUNDED,
+                        border_style="green"
+                    )
+                )
+                
+            except Exception as workflow_error:
+                console.print(
+                    Panel(
+                        f":cross_mark: Workflow failed: {workflow_error}",
+                        box=box.ROUNDED,
+                        border_style="red"
+                    )
+                )
+                raise typer.Exit(1)
+
     except Exception as e:
         console.print(
             Panel(f":cross_mark: Error during quality assessment: {e}", box=box.ROUNDED, border_style="red")
