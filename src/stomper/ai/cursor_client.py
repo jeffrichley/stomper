@@ -2,15 +2,90 @@
 
 import json
 import logging
+import os
+import platform
 import select
 import subprocess
 import time
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from .base import AgentCapabilities, AgentInfo, BaseAIAgent
 from .prompt_generator import PromptGenerator
 
 logger = logging.getLogger(__name__)
+
+
+def _is_wsl() -> bool:
+    """Check if currently running inside WSL.
+    
+    Returns:
+        True if running in WSL, False otherwise
+    """
+    try:
+        # Check for WSL-specific files/environment
+        if os.path.exists("/proc/version"):
+            with open("/proc/version", "r", encoding="utf-8") as f:
+                return "microsoft" in f.read().lower() or "wsl" in f.read().lower()
+        return False
+    except Exception:
+        return False
+
+
+def _is_windows() -> bool:
+    """Check if running on Windows (not WSL).
+    
+    Returns:
+        True if running on native Windows, False otherwise
+    """
+    return platform.system() == "Windows"
+
+
+def _is_wsl_available() -> bool:
+    """Check if WSL is available on Windows.
+    
+    Returns:
+        True if WSL is installed and available, False otherwise
+    """
+    if not _is_windows():
+        return False
+    
+    try:
+        result = subprocess.run(
+            ["wsl", "--status"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def _windows_path_to_wsl(windows_path: str) -> str:
+    """Convert Windows path to WSL path.
+    
+    Args:
+        windows_path: Windows path (e.g., E:\\workspaces\\project)
+    
+    Returns:
+        WSL path (e.g., /mnt/e/workspaces/project)
+    """
+    path = Path(windows_path)
+    
+    # Get the drive letter and path components
+    parts = path.parts
+    if len(parts) == 0:
+        return windows_path
+    
+    # Extract drive letter (e.g., 'E:')
+    drive = parts[0].rstrip(":\\").lower()
+    
+    # Convert to WSL format: /mnt/e/...
+    wsl_parts = ["/mnt", drive] + list(parts[1:])
+    wsl_path = "/".join(wsl_parts)
+    
+    return wsl_path
 
 
 class CursorClient(BaseAIAgent):
@@ -44,11 +119,48 @@ class CursorClient(BaseAIAgent):
         self.api_key = api_key
         self.timeout = timeout
         self.prompt_generator = PromptGenerator()
+        
+        # Detect execution environment
+        self.use_wsl = False
+        if _is_windows() and not _is_wsl():
+            # We're on native Windows, check if WSL is available
+            if _is_wsl_available():
+                self.use_wsl = True
+                logger.info("🪟 Running on Windows - cursor-agent will be executed via WSL")
+            else:
+                logger.warning("⚠️ Running on Windows without WSL - cursor-agent may not be available")
+        elif _is_wsl():
+            logger.info("🐧 Running inside WSL - cursor-agent will execute natively")
+        else:
+            logger.info("🐧 Running on Unix/Linux - cursor-agent will execute natively")
 
         # Check availability during initialization
         if not self.is_available():
             raise RuntimeError("cursor-cli not available or not accessible")
-        logger.info("Cursor CLI available and ready")
+        logger.info("✅ Cursor CLI available and ready")
+
+    def _prepare_command(self, cmd: list[str], cwd: str) -> tuple[list[str], str]:
+        """Prepare command for execution, wrapping with WSL if needed.
+        
+        Args:
+            cmd: Command to execute (e.g., ["cursor-agent", "--version"])
+            cwd: Working directory path
+        
+        Returns:
+            Tuple of (prepared_command, prepared_cwd)
+        """
+        if self.use_wsl:
+            # Convert Windows path to WSL path
+            wsl_cwd = _windows_path_to_wsl(cwd)
+            
+            # Wrap command with wsl
+            wsl_cmd = ["wsl", "--cd", wsl_cwd, "--"] + cmd
+            
+            # Use Windows path as cwd for subprocess (wsl handles the cd)
+            return wsl_cmd, cwd
+        else:
+            # No transformation needed
+            return cmd, cwd
 
     def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> str:
         """Generate fix using cursor-cli in sandbox.
@@ -175,9 +287,15 @@ class CursorClient(BaseAIAgent):
         Returns:
             A dict with stdout, stderr, parsed events, and final result.
         """
+        # Prepare command for WSL if needed
+        prepared_cmd, prepared_cwd = self._prepare_command(cmd, cwd)
+        
+        logger.debug(f"Executing command: {' '.join(prepared_cmd)}")
+        logger.debug(f"Working directory: {prepared_cwd}")
+        
         proc = subprocess.Popen(
-            cmd,
-            cwd=cwd,
+            prepared_cmd,
+            cwd=prepared_cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -256,8 +374,16 @@ class CursorClient(BaseAIAgent):
             cursor-cli version string
         """
         try:
+            cmd = ["cursor-agent", "--version"]
+            # For version check, use current directory
+            prepared_cmd, prepared_cwd = self._prepare_command(cmd, str(Path.cwd()))
+            
             result = subprocess.run(
-                ["cursor-agent", "--version"], capture_output=True, text=True, timeout=5
+                prepared_cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=5,
+                cwd=prepared_cwd
             )
             if result.returncode == 0:
                 return result.stdout.strip()
@@ -273,8 +399,16 @@ class CursorClient(BaseAIAgent):
             True if cursor-cli is available, False otherwise
         """
         try:
+            cmd = ["cursor-agent", "--version"]
+            # For availability check, use current directory
+            prepared_cmd, prepared_cwd = self._prepare_command(cmd, str(Path.cwd()))
+            
             result = subprocess.run(
-                ["cursor-agent", "--version"], capture_output=True, text=True, timeout=5
+                prepared_cmd, 
+                capture_output=True, 
+                text=True, 
+                timeout=5,
+                cwd=prepared_cwd
             )
             return result.returncode == 0
         except Exception:
