@@ -1,5 +1,6 @@
 """Main CLI entry point for Stomper."""
 
+import sys
 from pathlib import Path
 
 from rich import box
@@ -16,6 +17,16 @@ from stomper.config.validator import ConfigValidator
 from stomper.discovery import FileScanner
 from stomper.quality.manager import QualityToolManager
 
+# Configure UTF-8 output for Windows emoji support
+if sys.platform == "win32":
+    try:
+        # Reconfigure stdout/stderr to use UTF-8 encoding
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except (AttributeError, OSError):
+        # Fallback for older Python or terminals that don't support reconfigure
+        pass
+
 # Create the main Typer app
 app = typer.Typer(
     name="stomper",
@@ -23,8 +34,10 @@ app = typer.Typer(
     add_completion=False,
 )
 
-# Create console for rich output
-console = Console()
+# Create console for rich output with emoji support
+# emoji=True converts :emoji_name: to actual emojis
+# legacy_windows=False forces UTF-8 mode on Windows Terminal
+console = Console(emoji=True, legacy_windows=False)
 
 
 @app.command()
@@ -197,17 +210,17 @@ def print_header() -> None:
 
 def print_config_summary(config: dict, enabled_tools: list, dry_run: bool) -> None:
     """Print a beautiful configuration summary."""
-    # Create a table for configuration
-    table = Table(title="🔧 Configuration", box=box.ROUNDED)
+    # Create a table for configuration (using Rich emoji shortcode)
+    table = Table(title=":wrench: Configuration", box=box.ROUNDED)
     table.add_column("Setting", style="cyan", no_wrap=True)
     table.add_column("Value", style="white")
 
-    # Tool status
-    tool_status = "✅ " + ", ".join(enabled_tools) if enabled_tools else "❌ None"
+    # Tool status (using Rich emoji shortcodes)
+    tool_status = ":white_check_mark: " + ", ".join(enabled_tools) if enabled_tools else ":cross_mark: None"
     table.add_row("Enabled Tools", tool_status)
 
-    # Dry run status
-    dry_run_status = "🔍 Yes" if dry_run else "⚡ No"
+    # Dry run status (using Rich emoji shortcodes)
+    dry_run_status = ":mag: Yes" if dry_run else ":zap: No"
     table.add_row("Dry Run", dry_run_status)
 
     # AI Agent
@@ -227,7 +240,7 @@ def print_file_discovery_summary(discovered_files: list, stats: dict, target_inf
     """Print a beautiful file discovery summary."""
     # Create columns for file info
     file_info = Table(box=box.ROUNDED)
-    file_info.add_column("📁 File Discovery", style="green", no_wrap=True)
+    file_info.add_column(":file_folder: File Discovery", style="green", no_wrap=True)
     file_info.add_column("Value", style="white")
 
     file_info.add_row("Target", target_info)
@@ -246,7 +259,7 @@ def print_quality_results(
     if not filtered_errors:
         # No issues found
         success_panel = Panel(
-            Align.center(Text("🎉 No matching issues found!", style="bold green")),
+            Align.center(Text(":party_popper: No matching issues found!", style="bold green")),
             box=box.ROUNDED,
             border_style="green",
             padding=(1, 2),
@@ -255,13 +268,13 @@ def print_quality_results(
         return
 
     # Create results table
-    results_table = Table(title="🔍 Quality Assessment Results", box=box.ROUNDED)
+    results_table = Table(title=":mag: Quality Assessment Results", box=box.ROUNDED)
     results_table.add_column("Tool", style="cyan", no_wrap=True)
     results_table.add_column("Issues", style="red", justify="right")
     results_table.add_column("Status", style="yellow")
 
     for tool, count in tool_summary.items():
-        status = "🔍 Dry Run" if dry_run else "⚡ Ready to Fix"
+        status = ":mag: Dry Run" if dry_run else ":zap: Ready to Fix"
         results_table.add_row(tool, str(count), status)
 
     console.print(results_table)
@@ -277,7 +290,7 @@ def print_quality_results(
 
     summary_panel = Panel(
         summary_text,
-        title="📊 Summary",
+        title=":bar_chart: Summary",
         box=box.ROUNDED,
         border_style="red" if filtered_errors else "green",
     )
@@ -285,12 +298,12 @@ def print_quality_results(
 
     if dry_run:
         console.print(
-            Panel("🔍 Dry run complete - no changes made", box=box.ROUNDED, border_style="yellow")
+            Panel(":mag: Dry run complete - no changes made", box=box.ROUNDED, border_style="yellow")
         )
     else:
         console.print(
             Panel(
-                "⚡ Quality tool integration complete!\n🔧 Next: AI agent integration for automated fixing",
+                ":zap: Quality tool integration complete!\n:wrench: Next: AI agent integration for automated fixing",
                 box=box.ROUNDED,
                 border_style="blue",
             )
@@ -351,6 +364,9 @@ def fix(
         None, "--git-diff", help="Only process files changed vs specified branch (e.g., 'main')"
     ),
     # Advanced filtering options
+    include: str | None = typer.Option(
+        None, "--include", help="Include patterns (comma-separated, e.g., '**/*.py,**/*.pyi')"
+    ),
     exclude: str | None = typer.Option(
         None, "--exclude", help="Exclusion patterns (comma-separated)"
     ),
@@ -368,6 +384,39 @@ def fix(
     max_errors: int = typer.Option(100, "--max-errors", help="Maximum errors to fix per iteration"),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be fixed without making changes"
+    ),
+    # Workflow options (NEW - Phase 2 Parallel Processing)
+    use_sandbox: bool = typer.Option(
+        True, "--use-sandbox/--no-use-sandbox",
+        help="Use git worktree sandbox for isolated execution (safer but slower)"
+    ),
+    run_tests: bool = typer.Option(
+        True, "--run-tests/--no-run-tests",
+        help="Run tests after fixes to validate no regressions"
+    ),
+    max_parallel_files: int = typer.Option(
+        4, "--max-parallel-files",
+        help="Maximum files to process in parallel (1=sequential, 4=balanced, 8+=fast)"
+    ),
+    test_validation: str = typer.Option(
+        "full", "--test-validation",
+        help="Test validation mode: full (all tests per file), quick (affected only), final (once at end), none (skip)"
+    ),
+    continue_on_error: bool = typer.Option(
+        True, "--continue-on-error/--no-continue-on-error",
+        help="Continue processing other files after a file fails"
+    ),
+    max_retries: int = typer.Option(
+        3, "--max-retries",
+        help="Maximum retry attempts per file"
+    ),
+    processing_strategy: str = typer.Option(
+        "batch_errors", "--processing-strategy",
+        help="Processing strategy: batch_errors, one_error_type, all_errors"
+    ),
+    agent_name: str = typer.Option(
+        "cursor-cli", "--agent-name",
+        help="AI agent to use for fixing"
     ),
     # Additional options
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
@@ -404,6 +453,15 @@ def fix(
             max_errors=max_errors,
             dry_run=dry_run,
             verbose=verbose,
+            # Workflow overrides (NEW - Phase 2 Parallel Processing)
+            use_sandbox=use_sandbox,
+            run_tests=run_tests,
+            max_retries=max_retries,
+            processing_strategy=processing_strategy,
+            agent_name=agent_name,
+            test_validation=test_validation,
+            continue_on_error=continue_on_error,
+            max_parallel_files=max_parallel_files,
         )
 
         # Validate CLI overrides
@@ -445,7 +503,20 @@ def fix(
     # Get configuration settings for file discovery
     config_files = final_config.files
 
-    # Implement precedence: CLI > config > defaults
+    # Implement precedence: CLI > context-based defaults > config defaults
+    
+    # Parse include patterns with proper precedence
+    include_patterns = None
+    if include:
+        # CLI explicitly specified - highest priority
+        include_patterns = [p.strip() for p in include.split(",") if p.strip()]
+    elif directory:
+        # User specified a directory - use sensible default for that directory
+        include_patterns = ["**/*.py"]
+    else:
+        # Use config defaults (typically ["src/**/*.py", "tests/**/*.py"])
+        include_patterns = config_files.include
+    
     # Parse exclude patterns (CLI takes precedence)
     exclude_patterns = None
     if exclude:
@@ -468,10 +539,10 @@ def fix(
         discovered_files = [f for f in file_list if f.exists()]
         target_info = f"Multiple files: {len(discovered_files)} files"
     elif directory:
-        # Directory scanning
+        # Directory scanning with include patterns
         discovered_files = file_scanner.discover_files(
             target_path=directory,
-            include_patterns=config_files.include,
+            include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
             max_files=effective_max_files,
         )
@@ -480,7 +551,7 @@ def fix(
         # Glob pattern matching
         discovered_files = file_scanner.discover_files(
             target_path=Path(pattern),
-            include_patterns=config_files.include,
+            include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
             max_files=effective_max_files,
         )
@@ -517,10 +588,10 @@ def fix(
 
         print_git_summary(set(discovered_files), git_changed, git_staged, git_diff)
     else:
-        # Default: scan project root with config patterns
+        # Default: scan project root with include patterns
         discovered_files = file_scanner.discover_files(
             target_path=project_root,
-            include_patterns=config_files.include,
+            include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
             max_files=effective_max_files,
         )
@@ -532,7 +603,7 @@ def fix(
         print_file_discovery_summary(discovered_files, stats, target_info)
 
         if verbose:
-            console.print(Panel("📁 Files to process:", box=box.ROUNDED, border_style="blue"))
+            console.print(Panel(":file_folder: Files to process:", box=box.ROUNDED, border_style="blue"))
             for f in discovered_files[:10]:  # Show first 10 files
                 console.print(f"  {f.relative_to(project_root)}")
             if len(discovered_files) > 10:
@@ -558,7 +629,7 @@ def fix(
 
     # Run quality tools with pattern-based processing
     console.print(
-        Panel("🔍 Starting quality assessment...", box=box.ROUNDED, border_style="yellow")
+        Panel(":mag: Starting quality assessment...", box=box.ROUNDED, border_style="yellow")
     )
 
     try:
@@ -604,7 +675,7 @@ def fix(
 
     except Exception as e:
         console.print(
-            Panel(f"❌ Error during quality assessment: {e}", box=box.ROUNDED, border_style="red")
+            Panel(f":cross_mark: Error during quality assessment: {e}", box=box.ROUNDED, border_style="red")
         )
         raise typer.Exit(1)
 

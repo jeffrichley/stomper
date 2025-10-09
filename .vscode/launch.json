@@ -1,49 +1,189 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Demo Prompt Generator",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/demo_prompt_generator.py",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}/src"
-            },
-            "justMyCode": false
-        },
-        {
-            "name": "Run Tests - Prompt Generator",
-            "type": "python",
-            "request": "launch",
-            "module": "pytest",
-            "args": [
-                "tests/unit/test_prompt_generator.py",
-                "-v"
-            ],
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}/src"
-            },
-            "justMyCode": false
-        },
-        {
-            "name": "Run All Tests",
-            "type": "python",
-            "request": "launch",
-            "module": "pytest",
-            "args": [
-                "tests/",
-                "-v"
-            ],
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}/src"
-            },
-            "justMyCode": false
-        }
-    ]
+  "version": "0.2.0",
+  "// NOTE": "All configurations use new CLI parameters for full control",
+  "// AVAILABLE": "Press F5 and select a configuration to start debugging",
+  "configurations": [
+    {
+      "name": "Debug Stomper - Parallel Workflow (2 files)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--directory", "test_errors/",
+        "--ruff",
+        "--no-mypy",
+        "--max-parallel-files", "2",
+        "--use-sandbox",
+        "--no-run-tests"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Stomper - Sequential (1 file at a time)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--directory", "test_errors/",
+        "--include", "**/*.py,**/*.pyi",
+        "--ruff",
+        "--no-mypy",
+        "--max-parallel-files", "1",
+        "--use-sandbox",
+        "--no-run-tests"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Stomper - Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--file", "${file}",
+        "--ruff",
+        "--no-mypy",
+        "--max-parallel-files", "1",
+        "--no-run-tests"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Stomper - Custom Include Patterns",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--directory", "test_errors/",
+        "--include", "**/*.py,**/*.pyi",
+        "--ruff",
+        "--no-mypy",
+        "--max-parallel-files", "2",
+        "--no-use-sandbox",
+        "--no-run-tests"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Stomper - With Exclude Patterns",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--directory", "src/",
+        "--exclude", "**/migrations/**,**/__pycache__/**",
+        "--ruff",
+        "--no-mypy",
+        "--max-parallel-files", "4",
+        "--use-sandbox",
+        "--no-run-tests"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Stomper - No Sandbox (Direct Mode)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--directory", "test_errors/",
+        "--ruff",
+        "--no-mypy",
+        "--no-use-sandbox",
+        "--no-run-tests",
+        "--max-parallel-files", "2"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Stomper - Multiple Tools",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--directory", "test_errors/",
+        "--ruff",
+        "--mypy",
+        "--max-parallel-files", "2",
+        "--use-sandbox",
+        "--no-run-tests"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Stomper - On Stomper Itself",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "stomper",
+      "args": [
+        "fix",
+        "--directory", "src/stomper/",
+        "--ruff",
+        "--no-mypy",
+        "--max-parallel-files", "2",
+        "--use-sandbox",
+        "--no-run-tests"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    },
+    {
+      "name": "Debug Custom Script",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/debug_parallel_workflow.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      }
+    }
+  ]
 }
