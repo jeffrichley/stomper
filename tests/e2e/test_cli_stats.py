@@ -1,14 +1,14 @@
 """End-to-end tests for stats command."""
 
-import pytest
 from pathlib import Path
+
+import pytest
 from typer.testing import CliRunner
 
-from stomper.cli import app
 from stomper.ai.mapper import ErrorMapper
 from stomper.ai.models import FixOutcome, PromptStrategy
+from stomper.cli import app
 from stomper.quality.base import QualityError
-
 
 runner = CliRunner()
 

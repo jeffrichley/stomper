@@ -3,7 +3,6 @@
 import logging
 from pathlib import Path
 import tempfile
-import uuid
 
 from git import Repo
 from git.exc import GitCommandError

@@ -74,7 +74,7 @@ class StomperState(TypedDict, total=False):
 
     # Current processing state
     files: list[FileState]  # Queue of files to process (for fan-out)
-    
+
     # Per-file processing state (for parallel branches)
     current_file: FileState | None  # Current file being processed (in parallel branch)
     current_prompt: str  # Generated prompt for current file

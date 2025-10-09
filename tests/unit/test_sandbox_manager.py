@@ -1,12 +1,12 @@
 """Tests for SandboxManager."""
 
-import sys
-import time
 from pathlib import Path
+import sys
 import tempfile
+import time
 
-import pytest
 from git import Repo
+import pytest
 
 from stomper.ai.sandbox_manager import SandboxManager
 

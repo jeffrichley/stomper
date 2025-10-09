@@ -58,22 +58,22 @@ class WorkflowConfig(BaseModel):
         description="Processing strategy: batch_errors, one_error_type, all_errors",
     )
     agent_name: str = Field(default="cursor-cli", description="AI agent to use")
-    
+
     # Per-file worktree architecture settings (NEW)
     test_validation: Literal["full", "quick", "final", "none"] = Field(
         default="full",
         description="Test validation mode: full=all tests per file, quick=affected tests, final=once at end, none=skip"
     )
     files_per_worktree: int = Field(
-        default=1, 
-        ge=1, 
+        default=1,
+        ge=1,
         description="Files per worktree (1=per-file isolation, >1=batched)"
     )
     continue_on_error: bool = Field(
         default=True,
         description="Continue processing other files after a file fails"
     )
-    
+
     # Parallel processing settings (Phase 2)
     max_parallel_files: int = Field(
         default=4,  # Good default: conservative but parallel
@@ -145,11 +145,11 @@ class ConfigOverride(BaseModel):
     max_retries: int | None = Field(default=None, ge=1, description="Maximum retry attempts")
     processing_strategy: str | None = None
     agent_name: str | None = None
-    
+
     # Per-file worktree architecture overrides (NEW)
     test_validation: Literal["full", "quick", "final", "none"] | None = None
     continue_on_error: bool | None = None
-    
+
     # Parallel processing overrides (Phase 2)
     max_parallel_files: int | None = Field(default=None, ge=1, le=32, description="Max parallel files")
 

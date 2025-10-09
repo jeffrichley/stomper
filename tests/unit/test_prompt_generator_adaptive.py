@@ -1,11 +1,12 @@
 """Test PromptGenerator adaptive strategy integration."""
 
-import pytest
 from pathlib import Path
 
-from stomper.ai.prompt_generator import PromptGenerator
+import pytest
+
 from stomper.ai.mapper import ErrorMapper
 from stomper.ai.models import FixOutcome, PromptStrategy
+from stomper.ai.prompt_generator import PromptGenerator
 from stomper.quality.base import QualityError
 
 
@@ -43,7 +44,7 @@ class TestPromptGeneratorAdaptive:
             errors_dir="errors",
             project_root=tmp_path,
         )
-        
+
         assert generator.mapper is not None
         assert generator.mapper.project_root == tmp_path.resolve()
 
@@ -55,7 +56,7 @@ class TestPromptGeneratorAdaptive:
             errors_dir="errors",
             mapper=mapper,
         )
-        
+
         assert generator.mapper is mapper
 
     def test_requires_project_root_or_mapper(self):
@@ -66,7 +67,7 @@ class TestPromptGeneratorAdaptive:
             template_dir="templates",
             errors_dir="errors",
         )
-        
+
         assert generator.mapper is None
 
     def test_generate_prompt_accepts_retry_count(self, tmp_path):
@@ -76,13 +77,13 @@ class TestPromptGeneratorAdaptive:
             errors_dir="errors",
             project_root=tmp_path,
         )
-        
+
         error = create_sample_error()
-        
+
         # Should accept retry_count
         prompt = generator.generate_prompt([error], "code context", retry_count=0)
         assert isinstance(prompt, str)
-        
+
         # Should also work without retry_count (default=0)
         prompt2 = generator.generate_prompt([error], "code context")
         assert isinstance(prompt2, str)
@@ -92,22 +93,22 @@ class TestPromptGeneratorAdaptive:
         # Create mapper with some history
         mapper = ErrorMapper(project_root=tmp_path, auto_save=False)
         error = create_sample_error(code="E501")
-        
+
         # Create difficult pattern
         for _ in range(3):
             mapper.record_attempt(error, FixOutcome.FAILURE, PromptStrategy.NORMAL)
         mapper.record_attempt(error, FixOutcome.SUCCESS, PromptStrategy.DETAILED)
-        
+
         # Create generator with mapper
         generator = PromptGenerator(
             template_dir="templates",
             errors_dir="errors",
             mapper=mapper,
         )
-        
+
         # Generate prompt - should use adaptive strategy
         prompt = generator.generate_prompt([error], "code context", retry_count=0)
-        
+
         # Verify prompt was generated
         assert len(prompt) > 0
         assert isinstance(prompt, str)
@@ -116,25 +117,25 @@ class TestPromptGeneratorAdaptive:
         """Test PromptGenerator escalates strategy on retry."""
         mapper = ErrorMapper(project_root=tmp_path, auto_save=False)
         error = create_sample_error(code="E501")
-        
+
         # Record failures to make it difficult
         for _ in range(3):
             mapper.record_attempt(error, FixOutcome.FAILURE, PromptStrategy.NORMAL)
         mapper.record_attempt(error, FixOutcome.SUCCESS, PromptStrategy.DETAILED)
-        
+
         generator = PromptGenerator(
             template_dir="templates",
             errors_dir="errors",
             mapper=mapper,
         )
-        
+
         # First attempt
         prompt0 = generator.generate_prompt([error], "code", retry_count=0)
         # Second attempt (retry)
         prompt1 = generator.generate_prompt([error], "code", retry_count=1)
         # Third attempt
         prompt2 = generator.generate_prompt([error], "code", retry_count=2)
-        
+
         # All should generate valid prompts
         assert isinstance(prompt0, str) and len(prompt0) > 0
         assert isinstance(prompt1, str) and len(prompt1) > 0
@@ -147,12 +148,12 @@ class TestPromptGeneratorAdaptive:
             template_dir="templates",
             errors_dir="errors",
         )
-        
+
         error = create_sample_error()
-        
+
         # Should generate prompt without mapper
         prompt = generator.generate_prompt([error], "code context")
-        
+
         assert isinstance(prompt, str)
         assert len(prompt) > 0
 
@@ -160,24 +161,24 @@ class TestPromptGeneratorAdaptive:
         """Test error advice is enhanced with historical suggestions."""
         mapper = ErrorMapper(project_root=tmp_path, auto_save=False)
         error = create_sample_error(code="E501")
-        
+
         # Record successful pattern
         mapper.record_attempt(error, FixOutcome.SUCCESS, PromptStrategy.DETAILED)
         mapper.record_attempt(error, FixOutcome.SUCCESS, PromptStrategy.DETAILED)
-        
+
         # Make it difficult to trigger historical suggestions
         mapper.record_attempt(error, FixOutcome.FAILURE, PromptStrategy.NORMAL)
         mapper.record_attempt(error, FixOutcome.FAILURE, PromptStrategy.NORMAL)
         mapper.record_attempt(error, FixOutcome.FAILURE, PromptStrategy.NORMAL)
-        
+
         generator = PromptGenerator(
             template_dir="templates",
             errors_dir="errors",
             mapper=mapper,
         )
-        
+
         prompt = generator.generate_prompt([error], "code context")
-        
+
         # Prompt should be generated
         assert isinstance(prompt, str)
         assert len(prompt) > 0
@@ -185,19 +186,19 @@ class TestPromptGeneratorAdaptive:
     def test_handles_new_error_with_no_history(self, tmp_path):
         """Test handles error codes with no historical data."""
         mapper = ErrorMapper(project_root=tmp_path, auto_save=False)
-        
+
         generator = PromptGenerator(
             template_dir="templates",
             errors_dir="errors",
             mapper=mapper,
         )
-        
+
         # New error never seen before
         error = create_sample_error(code="UNKNOWN_ERROR")
-        
+
         # Should generate prompt with default strategy
         prompt = generator.generate_prompt([error], "code context")
-        
+
         assert isinstance(prompt, str)
         assert len(prompt) > 0
 
