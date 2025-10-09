@@ -376,6 +376,7 @@ class StomperWorkflow:
                     logger.info(f"🤖 Calling agent for {current_file.file_path}")
                     error_context = {
                         "file_path": str(current_file.file_path),
+                        "working_dir": str(working_dir),  # Tell cursor-agent where to run
                         "error_count": len(current_file.errors),
                     }
 

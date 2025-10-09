@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+import shutil
 import subprocess
 from typing import Literal
 
@@ -9,6 +10,24 @@ from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 
 console = Console()
+
+
+def detect_project_manager(project_root: Path) -> str:
+    """Detect if running in UV, Poetry, or pip project.
+    
+    Args:
+        project_root: Root directory of the project
+        
+    Returns:
+        Project manager type: "uv", "poetry", or "pip"
+    """
+    # Check for UV lock file
+    if (project_root / "uv.lock").exists():
+        return "uv"
+    # Check for Poetry lock file
+    elif (project_root / "poetry.lock").exists():
+        return "poetry"
+    return "pip"
 
 
 class QualityError(BaseModel):
@@ -64,14 +83,85 @@ class BaseQualityTool(ABC):
         pass
 
     def is_available(self) -> bool:
-        """Check if the tool is available in PATH.
+        """Check if the tool is available in PATH or via package manager.
 
         Returns:
             True if tool is available, False otherwise
         """
-        import shutil
+        # First check if tool is directly available in PATH
+        if shutil.which(self.command) is not None:
+            return True
+        
+        # Check if we can run it via uv/poetry
+        # Try uv run (if uv is available)
+        if shutil.which("uv") is not None:
+            try:
+                result = subprocess.run(
+                    ["uv", "run", "--", self.command, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+        
+        # Try poetry run (if poetry is available)
+        if shutil.which("poetry") is not None:
+            try:
+                result = subprocess.run(
+                    ["poetry", "run", self.command, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+        
+        return False
 
-        return shutil.which(self.command) is not None
+    def _build_command(self, project_root: Path, extra_args: list[str] | None = None) -> list[str]:
+        """Build the command to run the tool with appropriate package manager.
+        
+        Args:
+            project_root: Root directory of the project
+            extra_args: Additional arguments to append
+            
+        Returns:
+            List of command parts to execute
+        """
+        cmd: list[str] = []
+        
+        # Detect project manager
+        project_manager = detect_project_manager(project_root)
+        
+        # Check if tool is directly available
+        tool_in_path = shutil.which(self.command) is not None
+        
+        # Build command based on availability
+        if tool_in_path:
+            # Tool is in PATH, use it directly
+            cmd = [self.command]
+        elif project_manager == "uv" and shutil.which("uv") is not None:
+            # Use uv run
+            cmd = ["uv", "run", "--", self.command]
+        elif project_manager == "poetry" and shutil.which("poetry") is not None:
+            # Use poetry run
+            cmd = ["poetry", "run", self.command]
+        else:
+            # Fallback to direct command (will likely fail, but let it fail with clear error)
+            cmd = [self.command]
+        
+        # Add extra args
+        if extra_args:
+            cmd.extend(extra_args)
+        
+        return cmd
 
     def run_tool(self, target_path: Path, project_root: Path) -> list[QualityError]:
         """Run the quality tool and return parsed errors.
@@ -88,13 +178,12 @@ class BaseQualityTool(ABC):
             ValueError: If tool output cannot be parsed
         """
         if not self.is_available():
-            console.print(f"[yellow]Warning: {self.tool_name} is not available in PATH[/yellow]")
+            console.print(f"[yellow]Warning: {self.tool_name} is not available[/yellow]")
             return []
 
-        # Build command
-        cmd = [self.command]
-        cmd.extend(self._get_base_args())
-        cmd.append(str(target_path))
+        # Build command with package manager detection
+        args = self._get_base_args() + [str(target_path)]
+        cmd = self._build_command(project_root, args)
 
         try:
             # Run the tool
@@ -161,14 +250,13 @@ class BaseQualityTool(ABC):
             ValueError: If tool output cannot be parsed
         """
         if not self.is_available():
-            console.print(f"[yellow]Warning: {self.tool_name} is not available in PATH[/yellow]")
+            console.print(f"[yellow]Warning: {self.tool_name} is not available[/yellow]")
             return []
 
-        # Build command using tool's own configuration
+        # Build command using tool's own configuration with package manager detection
         # No Stomper pattern injection - respect tool configs
-        cmd = [self.command]
-        cmd.extend(self._get_base_args())
-        cmd.extend(self._get_tool_native_args(project_root))
+        args = self._get_base_args() + self._get_tool_native_args(project_root)
+        cmd = self._build_command(project_root, args)
 
         try:
             # Run the tool

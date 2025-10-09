@@ -94,11 +94,10 @@ def _windows_path_to_wsl(windows_path: str) -> str:
 class CursorClient(BaseAIAgent):
     """Cursor CLI client with full project context and git sandbox support."""
 
-    def __init__(self, sandbox_manager, api_key: str | None = None, timeout: int = 30):
-        """Initialize Cursor CLI client with project context.
+    def __init__(self, api_key: str | None = None, timeout: int = 30):
+        """Initialize Cursor CLI client.
 
         Args:
-            sandbox_manager: Sandbox manager instance for git operations
             api_key: Cursor API key (if None, will use environment variable)
             timeout: Timeout for cursor-cli commands in seconds
         """
@@ -118,7 +117,6 @@ class CursorClient(BaseAIAgent):
         )
         super().__init__(agent_info)
 
-        self.sandbox_manager = sandbox_manager
         self.api_key = api_key
         self.timeout = timeout
         self.prompt_generator = PromptGenerator()
@@ -185,25 +183,27 @@ class CursorClient(BaseAIAgent):
         # Construct comprehensive prompt with error context
         full_prompt = self._construct_prompt(error_context, code_context, prompt)
 
-        # Get the file path from error context (required!)
+        # Get required parameters from error_context
         file_path_str = error_context.get("file_path")
         if not file_path_str:
             raise ValueError("error_context must contain 'file_path' - cannot fix without knowing which file to modify")
         
+        working_dir_str = error_context.get("working_dir")
+        if not working_dir_str:
+            raise ValueError("error_context must contain 'working_dir' - cursor-agent needs to know where to run")
+        
         file_path_relative = Path(file_path_str)
+        working_dir = Path(working_dir_str)
         
-        # Create a unique session ID for this fix
-        session_id = f"cursor-fix-{uuid.uuid4().hex[:8]}"
+        # The file should already exist in working_dir (sandbox or main repo)
+        # cursor-agent will read/modify it directly
+        target_file = working_dir / file_path_relative
+        if not target_file.exists():
+            logger.error(f"File not found: {target_file}")
+            raise FileNotFoundError(f"Target file does not exist: {target_file}")
         
-        # Create a temporary sandbox for this fix
-        sandbox_path = self.sandbox_manager.create_sandbox(session_id)
-        
-        # Write the file to sandbox so cursor-agent can modify it
-        target_file = sandbox_path / file_path_relative
-        target_file.parent.mkdir(parents=True, exist_ok=True)
-        target_file.write_text(code_context, encoding="utf-8")
-        
-        logger.debug(f"Wrote file to sandbox: {target_file}")
+        logger.debug(f"Working in directory: {working_dir}")
+        logger.debug(f"Target file: {target_file}")
 
         # Write prompt to file to avoid shell escaping issues
         # Prompts often contain special characters (backticks, quotes, newlines)
@@ -211,14 +211,17 @@ class CursorClient(BaseAIAgent):
         prompt_file = None
         wrapper_script = None
         
+        # Generate unique ID for temp files
+        session_id = uuid.uuid4().hex[:8]
+        
         try:
-            # Create prompt file in sandbox
-            prompt_file = sandbox_path / f".cursor-prompt-{session_id}.txt"
+            # Create prompt file in working directory
+            prompt_file = working_dir / f".cursor-prompt-{session_id}.txt"
             prompt_file.write_text(full_prompt, encoding="utf-8")
             
-            # Create wrapper script that sources profile and runs cursor-agent
+            # Create wrapper script that runs cursor-agent
             # This avoids complex escaping issues with bash -c
-            wrapper_script = sandbox_path / f".cursor-run-{session_id}.sh"
+            wrapper_script = working_dir / f".cursor-run-{session_id}.sh"
             
             # Use explicit path to cursor-agent since we know where it is
             # Sourcing profile doesn't work reliably in non-interactive scripts
@@ -238,8 +241,8 @@ cd "$(dirname "$0")"
             
             # Convert wrapper script path to WSL format if on Windows
             if self.use_wsl:
-                wsl_sandbox = _windows_path_to_wsl(str(sandbox_path))
-                wsl_script = f"{wsl_sandbox}/{wrapper_script.name}"
+                wsl_working_dir = _windows_path_to_wsl(str(working_dir))
+                wsl_script = f"{wsl_working_dir}/{wrapper_script.name}"
                 cmd = ["wsl", "bash", wsl_script]
             else:
                 cmd = [str(wrapper_script)]
@@ -250,7 +253,7 @@ cd "$(dirname "$0")"
             # Run the wrapper script directly WITHOUT using _prepare_command
             # The wrapper script already handles everything (PATH, cd, cursor-agent)
             # Using _prepare_command would double-wrap with WSL which breaks
-            result = self._run_wrapper_script(cmd, str(sandbox_path), timeout=self.timeout)
+            result = self._run_wrapper_script(cmd, str(working_dir), timeout=self.timeout)
 
             # Check if cursor-agent succeeded
             # Note: cursor-agent with -p flag outputs text, not JSON events
@@ -291,9 +294,6 @@ cd "$(dirname "$0")"
                     wrapper_script.unlink()
                 except Exception as e:
                     logger.warning(f"Failed to delete wrapper script: {e}")
-            
-            # Cleanup sandbox using session_id
-            self.sandbox_manager.cleanup_sandbox(session_id)
 
     def _construct_prompt(
         self, error_context: dict[str, Any], code_context: str, prompt: str

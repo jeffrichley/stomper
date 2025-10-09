@@ -726,7 +726,6 @@ def fix(
             if agent_name == "cursor-cli":
                 try:
                     cursor_agent = CursorClient(
-                        sandbox_manager=sandbox_manager,
                         timeout=60  # 60 seconds timeout for AI operations
                     )
                     workflow.register_agent("cursor-cli", cursor_agent)

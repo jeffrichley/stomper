@@ -21,7 +21,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -37,13 +39,16 @@
         "--no-mypy",
         "--max-parallel-files", "1",
         "--use-sandbox",
-        "--run-tests"
+        "--run-tests",
+        "--debug"
       ],
       "console": "integratedTerminal",
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -63,7 +68,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -85,7 +92,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -107,7 +116,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -128,7 +139,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -149,7 +162,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -170,7 +185,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     },
     {
@@ -182,7 +199,9 @@
       "justMyCode": false,
       "cwd": "${workspaceFolder}",
       "env": {
-        "PYTHONPATH": "${workspaceFolder}/src"
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "VIRTUAL_ENV": "${workspaceFolder}/.venv",
+        "PATH": "${workspaceFolder}/.venv/bin:${env:PATH}"
       }
     }
   ]
