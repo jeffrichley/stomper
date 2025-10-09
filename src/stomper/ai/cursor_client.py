@@ -185,8 +185,11 @@ class CursorClient(BaseAIAgent):
         # Construct comprehensive prompt with error context
         full_prompt = self._construct_prompt(error_context, code_context, prompt)
 
-        # Get the file path from error context
-        file_path_str = error_context.get("file_path", "unknown.py")
+        # Get the file path from error context (required!)
+        file_path_str = error_context.get("file_path")
+        if not file_path_str:
+            raise ValueError("error_context must contain 'file_path' - cannot fix without knowing which file to modify")
+        
         file_path_relative = Path(file_path_str)
         
         # Create a unique session ID for this fix
