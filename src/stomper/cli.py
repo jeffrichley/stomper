@@ -16,6 +16,7 @@ from stomper.config.models import ConfigOverride
 from stomper.config.validator import ConfigValidator
 from stomper.discovery import FileScanner
 from stomper.quality.manager import QualityToolManager
+from stomper.workflow.logging import setup_workflow_logging
 
 # Configure UTF-8 output for Windows emoji support
 if sys.platform == "win32":
@@ -420,6 +421,8 @@ def fix(
     ),
     # Additional options
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+    log_file: Path | None = typer.Option(None, "--log-file", help="Log to file (in addition to console)"),
     version: bool = typer.Option(False, "--version", help="Show version and exit"),
 ) -> None:
     """Fix code quality issues in your codebase."""
@@ -429,6 +432,15 @@ def fix(
 
         console.print(f"stomper v{__version__}")
         raise typer.Exit()
+
+    # Setup logging based on flags
+    log_level = "DEBUG" if debug else ("INFO" if verbose else "WARNING")
+    setup_workflow_logging(level=log_level, log_file=log_file)
+    
+    if debug:
+        console.print(f"[dim]🔧 Debug logging enabled (level: {log_level})[/dim]")
+    if log_file:
+        console.print(f"[dim]📝 Logging to file: {log_file}[/dim]")
 
     # Validate file selection arguments
     validate_file_selection(file, files, directory, pattern, git_changed, git_staged, git_diff)
