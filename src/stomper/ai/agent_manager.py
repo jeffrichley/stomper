@@ -298,7 +298,7 @@ class AgentManager:
         code_context: str,
         prompt: str,
         max_retries: int = 3,
-    ) -> str:
+    ) -> None:
         """Generate fix with intelligent fallback based on error history.
 
         Args:
@@ -310,7 +310,7 @@ class AgentManager:
             max_retries: Maximum retry attempts
 
         Returns:
-            Generated fix from successful attempt
+            None - agent modifies file in place
 
         Raises:
             RuntimeError: If all retries exhausted
@@ -361,7 +361,8 @@ class AgentManager:
                     f"(strategy: {adaptive_strategy.verbosity.value}, retry: {retry_count})"
                 )
 
-                result = agent.generate_fix(error_context, code_context, prompt)
+                # Agent modifies file in place, no return value
+                agent.generate_fix(error_context, code_context, prompt)
 
                 # ✅ Record success
                 self.mapper.record_attempt(
@@ -371,8 +372,7 @@ class AgentManager:
                 )
 
                 logger.info(f"✅ Fix successful with {adaptive_strategy.verbosity.value} strategy!")
-
-                return result
+                return  # Success - file modified in place
 
             except Exception as e:
                 logger.warning(f"❌ Attempt {retry_count + 1} failed with {primary_agent_name}: {e}")

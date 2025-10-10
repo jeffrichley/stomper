@@ -169,16 +169,16 @@ class CursorClient(BaseAIAgent):
             # No transformation needed
             return cmd, cwd
 
-    def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> str:
-        """Generate fix using cursor-cli in sandbox.
+    def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> None:
+        """Generate fix using cursor-agent in specified working directory.
 
         Args:
-            error_context: Error details including type, location, message
-            code_context: Surrounding code context
+            error_context: Must contain 'file_path' and 'working_dir'
+            code_context: Original code (not used - kept for interface compatibility)
             prompt: Specific fix instructions
 
         Returns:
-            Generated fix code as string
+            None - cursor-agent modifies file in place
         """
         # Construct comprehensive prompt with error context
         full_prompt = self._construct_prompt(error_context, code_context, prompt)
@@ -270,16 +270,15 @@ cd "$(dirname "$0")"
                 logger.debug(f"Cursor-agent output: {stdout_text[:500]}")  # First 500 chars
 
             logger.info("✅ Cursor-agent completed successfully!")
-
-            # Read the fixed file from sandbox
-            if target_file.exists():
-                fixed_code = target_file.read_text(encoding="utf-8")
-                logger.info(f"📖 Read fixed code from {target_file.name}")
-                return fixed_code
-            else:
-                logger.warning(f"⚠️ File {target_file} not found after cursor-agent ran")
-                logger.warning("Returning original code unchanged")
-                return code_context
+            
+            # cursor-agent has modified the file in place
+            # Verify file still exists (sanity check)
+            if not target_file.exists():
+                logger.error(f"⚠️ File {target_file} not found after cursor-agent ran")
+                raise FileNotFoundError(f"File disappeared after cursor-agent: {target_file}")
+            
+            logger.debug(f"✅ File modified in place: {target_file.name}")
+            # No return value - file already modified
 
         finally:
             # Cleanup temporary files

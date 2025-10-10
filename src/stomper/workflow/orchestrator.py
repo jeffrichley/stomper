@@ -16,6 +16,7 @@ from stomper.ai.mapper import ErrorMapper
 from stomper.ai.prompt_generator import PromptGenerator
 from stomper.ai.sandbox_manager import SandboxManager
 from stomper.quality.manager import QualityToolManager
+from stomper.workflow.package_manager import get_package_manager
 from stomper.workflow.state import ErrorInfo, FileState, ProcessingStatus, StomperState
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,11 @@ class StomperWorkflow:
             self.sandbox_manager = SandboxManager(project_root=project_root)
         else:
             self.sandbox_manager = None
+
+        # Detect package manager for dependency installation in sandboxes
+        self.package_manager = get_package_manager(project_root)
+        if self.package_manager:
+            logger.info(f"📦 Detected package manager: {self.package_manager.__class__.__name__}")
 
         # Parallel safety lock for diff application
         self._diff_application_lock = asyncio.Lock()
@@ -340,6 +346,12 @@ class StomperWorkflow:
                 working_dir = worktree_path
                 logger.info(f"✅ Worktree created: {worktree_path}")
 
+                # Install dependencies in sandbox
+                if self.package_manager:
+                    logger.info(f"📦 Installing dependencies in sandbox")
+                    if not self.package_manager.install_dependencies(working_dir):
+                        logger.warning("⚠️ Failed to install dependencies - tests may fail")
+
             # 2. Process with retry logic
             max_attempts = current_file.max_attempts
             for attempt in range(max_attempts):
@@ -380,7 +392,8 @@ class StomperWorkflow:
                         "error_count": len(current_file.errors),
                     }
 
-                    fixed_code = state["agent_manager"].generate_fix_with_intelligent_fallback(
+                    # cursor-agent modifies file in place, no return value
+                    state["agent_manager"].generate_fix_with_intelligent_fallback(
                         primary_agent_name="cursor-cli",
                         error=quality_errors[0] if quality_errors else None,
                         error_context=error_context,
@@ -388,9 +401,7 @@ class StomperWorkflow:
                         prompt=prompt,
                         max_retries=1,
                     )
-
-                    # Apply fix
-                    file_path.write_text(fixed_code, encoding="utf-8")
+                    # File already modified by cursor-agent in working_dir
 
                     # 2c. Verify fixes
                     logger.info(f"🔍 Verifying fixes for {current_file.file_path}")
@@ -453,16 +464,17 @@ class StomperWorkflow:
                     raise
 
             # 4. Extract diff (if using sandbox)
+            # Get ALL changes from sandbox (cursor-agent might modify multiple files)
             diff_content = None
             if worktree_path:
-                logger.info(f"📤 Extracting diff for {current_file.file_path}")
+                logger.info(f"📤 Extracting complete diff from sandbox")
                 worktree_repo = Repo(worktree_path)
-                diff_content = worktree_repo.git.diff("HEAD")
+                diff_content = worktree_repo.git.diff("HEAD")  # Gets all changes
 
                 if diff_content:
                     logger.info(f"✅ Diff extracted ({len(diff_content)} bytes)")
                 else:
-                    logger.warning("⚠️  No changes detected")
+                    logger.warning("⚠️  No changes detected in sandbox")
 
             # 5. CRITICAL SECTION: Apply to main (MUST be serialized!)
             if diff_content:

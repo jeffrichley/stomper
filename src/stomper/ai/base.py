@@ -59,7 +59,7 @@ class AgentInfo(BaseModel):
 class AIAgent(Protocol):
     """Protocol for swappable AI agents."""
 
-    def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> str:
+    def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> None:
         """Generate fix for given error context and code.
 
         Args:
@@ -68,7 +68,7 @@ class AIAgent(Protocol):
             prompt: Specific fix instructions
 
         Returns:
-            Generated fix code
+            None - modifies file in place
         """
         ...
 
@@ -104,7 +104,7 @@ class BaseAIAgent(ABC):
         self._agent_info = agent_info
 
     @abstractmethod
-    def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> str:
+    def generate_fix(self, error_context: dict[str, Any], code_context: str, prompt: str) -> None:
         """Generate fix for given error context and code.
 
         Args:
@@ -113,7 +113,7 @@ class BaseAIAgent(ABC):
             prompt: Specific fix instructions
 
         Returns:
-            Generated fix code
+            None - modifies file in place
         """
         pass
 

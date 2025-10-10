@@ -8,18 +8,18 @@ Usage:
 import asyncio
 from pathlib import Path
 
-from stomper.workflow.orchestrator import StomperWorkflow
-from stomper.quality.manager import QualityManager
 from stomper.ai.agent_manager import AgentManager
+from stomper.ai.mapper import ErrorMapper
 from stomper.ai.prompt_generator import PromptGenerator
 from stomper.ai.sandbox_manager import SandboxManager
-from stomper.ai.mapper import ErrorMapper
+from stomper.quality.manager import QualityManager
+from stomper.workflow.orchestrator import StomperWorkflow
 
 
 async def main():
     """Run workflow with debugging."""
     project_root = Path("test_errors")  # Directory with test files
-    
+
     # Configuration - MODIFY THESE FOR DIFFERENT TESTS
     config = {
         "project_root": project_root,
@@ -28,7 +28,7 @@ async def main():
         "run_tests": False,
         "max_parallel_files": 2,  # 1=sequential (easier), 2+=parallel
     }
-    
+
     print("="*60)
     print("🐛 STOMPER DEBUG SESSION")
     print("="*60)
@@ -38,17 +38,17 @@ async def main():
     print(f"Max parallel files: {config['max_parallel_files']}")
     print("="*60)
     print()
-    
+
     # Initialize components
     quality_manager = QualityManager(project_root)
     agent_manager = AgentManager(project_root)
     prompt_generator = PromptGenerator()
     mapper = ErrorMapper()
-    
+
     sandbox_manager = None
     if config["use_sandbox"]:
         sandbox_manager = SandboxManager(project_root)
-    
+
     # Create workflow
     workflow = StomperWorkflow(
         project_root=project_root,
@@ -61,14 +61,14 @@ async def main():
         use_sandbox=config["use_sandbox"],
         max_parallel_files=config["max_parallel_files"],
     )
-    
+
     # 🔴 SET BREAKPOINT HERE to step through workflow
     print("🚀 Starting workflow execution...")
     print("   (Set breakpoints in orchestrator.py to debug)")
     print()
-    
+
     result = await workflow.run(config)
-    
+
     # Print results
     print()
     print("="*60)
@@ -78,7 +78,7 @@ async def main():
     print(f"Failed fixes: {result.get('failed_fixes', [])}")
     print(f"Total errors fixed: {result.get('total_errors_fixed', 0)}")
     print("="*60)
-    
+
     # Print file status
     if result.get("files"):
         print()
@@ -93,18 +93,17 @@ async def main():
 
 if __name__ == "__main__":
     # 💡 DEBUGGING TIPS:
-    # 
+    #
     # Key breakpoint locations in orchestrator.py:
-    # 
+    #
     # 1. Line ~668: _fan_out_files() - See Send() objects created
     # 2. Line ~297: _process_single_file_complete() - See each file start
     # 3. Line ~690: async with self._diff_application_lock - Critical section
     # 4. Line ~563: _aggregate_results() - See final merged results
-    # 
+    #
     # Try different configs:
     # - max_parallel_files=1 for sequential (easier to debug)
     # - max_parallel_files=2 to see parallelism
     # - use_sandbox=False for simpler execution
-    
-    asyncio.run(main())
 
+    asyncio.run(main())
